@@ -368,6 +368,55 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     nope.set!
   end
 
+  # Before yield, loads the current value from 'o' and puts it on the
+  # stack. May put other things on the stack for its own use too; will
+  # give the number of such elements in the yield, so you can reach past
+  # them if you need to.
+  #
+  # When the yield returns, the stack must be the same height it was
+  # when the yield began. Presumably you have modified the value at the
+  # top; that value will be copied back into the variable referenced by
+  # 'o'.
+  #
+  # Upon return, the stack will contain the calculated value (that is,
+  # the value at the top of the stack after the yield); this function's
+  # net stack impact is thus +1.
+  def get_and_set(o)
+    case o
+    when RKelly::Nodes::ResolveNode
+      if ref = @g.state.scope.search_local(o.value.to_sym)
+        ref.get_bytecode(@g)
+        yield 0
+        ref.set_bytecode(@g)
+      else
+        @g.push_const :Capuchin
+        @g.find_const :Globals
+        @g.push_literal o.value.to_sym
+        @g.dup_many 2
+        @g.send :[], 1
+        yield 2
+        @g.send :[]=, 2
+      end
+    when RKelly::Nodes::DotAccessorNode
+      accept o.value
+      @g.push_literal o.accessor.to_sym
+      @g.dup_many 2
+      @g.send :js_get, 1
+      yield 2
+      @g.send :js_set, 2
+    when RKelly::Nodes::BracketAccessorNode
+      accept o.value
+      accept o.accessor
+      @g.send :js_key, 0
+      @g.dup_many 2
+      @g.send :js_get, 1
+      yield 2
+      @g.send :js_set, 2
+    else
+      raise NotImplementedError, "Don't know how to get+set #{o.class}"
+    end
+  end
+
   def visit_TryNode(o)
     # FIXME: Ignores catch
     accept o.value
@@ -386,49 +435,81 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
 
   def visit_PrefixNode(o)
-    # FIXME: Double-evaluates operand
-    accept o.operand
-    @g.meta_push_1
-    case o.value
-    when '++'
-      @g.meta_send_op_plus @g.find_literal(:+)
-    when '--'
-      @g.meta_send_op_minus @g.find_literal(:-)
+    get_and_set(o.operand) do
+      @g.meta_push_1
+      case o.value
+      when '++'
+        @g.meta_send_op_plus @g.find_literal(:+)
+      when '--'
+        @g.meta_send_op_minus @g.find_literal(:-)
+      end
     end
-    assign_to o.operand
   end
   def visit_PostfixNode(o)
-    # FIXME: Double-evaluates operand
-    accept o.operand
-    @g.dup
-    @g.meta_push_1
-    case o.value
-    when '++'
-      @g.meta_send_op_plus @g.find_literal(:+)
-    when '--'
-      @g.meta_send_op_minus @g.find_literal(:-)
+    get_and_set(o.operand) do |n|
+      @g.dup
+      @g.move_down n + 1 if n > 0
+      @g.meta_push_1
+      case o.value
+      when '++'
+        @g.meta_send_op_plus @g.find_literal(:+)
+      when '--'
+        @g.meta_send_op_minus @g.find_literal(:-)
+      end
     end
-    assign_to o.operand
     @g.pop
   end
 
   [
-    [:Add, :js_add],
-    [:BitAnd, '&'],
-    [:BitOr, '|'],
-    [:BitXOr, '^'],
-    [:Divide, :js_div],
-    [:LeftShift, '<<'],
-    [:Modulus, '%'],
-    [:Multiply, '*'],
-    [:RightShift, '>>'],
-    [:Subtract, '-'],
-  ].each do |name,op|
+    [ :Add,       :js_add,  :OpPlusEqual,   :meta_send_op_plus  ],
+    [ :Subtract,  :-,       :OpMinusEqual,  :meta_send_op_minus ],
+    [ :Greater,   :>,       nil,            :meta_send_op_gt    ],
+    [ :Less,      :<,       nil,            :meta_send_op_lt    ],
+  ].each do |name,op,eq,meta|
     define_method(:"visit_#{name}Node") do |o|
       @g.set_line o.line
       accept o.left
       accept o.value
-      @g.send op.to_sym, 1
+      @g.__send__ meta, @g.find_literal(op)
+    end
+    if eq
+      define_method(:"visit_#{eq}Node") do |o|
+        @g.set_line o.line
+        get_and_set(o.left) do
+          accept o.value
+          @g.__send__ meta, @g.find_literal(op)
+        end
+      end
+    end
+  end
+
+  [
+    [ :BitAnd,              :&,       :OpAndEqual      ],
+    [ :BitOr,               :|,       :OpOrEqual       ],
+    [ :BitXOr,              :^,       :OpXOrEqual      ],
+    [ :Divide,              :js_div,  :OpDivideEqual   ],
+    [ :LeftShift,           :<<,      :OpLShiftEqual   ],
+    [ :Modulus,             :%,       :OpModEqual      ],
+    [ :Multiply,            :*,       :OpMultiplyEqual ],
+    [ :RightShift,          :>>,      :OpRShiftEqual   ],
+    [ :UnsignedRightShift,  :">>>",   :OpURShiftEqual  ],
+    [ :GreaterOrEqual,      :>=,      nil              ],
+    [ :LessOrEqual,         :<=,      nil              ],
+  ].each do |name,op,eq|
+    define_method(:"visit_#{name}Node") do |o|
+      @g.set_line o.line
+      accept o.left
+      accept o.value
+      @g.send op, 1
+    end
+    if eq
+      define_method(:"visit_#{eq}Node") do |o|
+        @g.set_line o.line
+        get_and_set(o.left) do
+          accept o.value
+          @g.send op, 1
+        end
+      end
     end
   end
 
@@ -465,37 +546,24 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     done.set!
   end
 
-  [
-    [:Greater, '>'],
-    [:GreaterOrEqual, '>='],
-    [:Less, '<'],
-    [:LessOrEqual, '<='],
-  ].each do |name,op|
-    define_method(:"visit_#{name}Node") do |o|
-      @g.set_line o.line
-      accept o.left
-      accept o.value
-      @g.send op.to_sym, 1
-    end
-  end
 
   def visit_EqualNode(o)
     @g.set_line o.line
     accept o.left
     accept o.value
-    @g.send :js_equal, 1
+    @g.meta_send_op_equal @g.find_literal(:js_equal)
   end
   def visit_StrictEqualNode(o)
     @g.set_line o.line
     accept o.left
     accept o.value
-    @g.send :js_strict_equal, 1
+    @g.meta_send_op_equal @g.find_literal(:js_strict_equal)
   end
   def visit_NotEqualNode(o)
     @g.set_line o.line
     accept o.left
     accept o.value
-    @g.send :js_equal, 1
+    @g.meta_send_op_equal @g.find_literal(:js_equal)
 
     alt = @g.new_label
     done = @g.new_label
@@ -511,7 +579,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     @g.set_line o.line
     accept o.left
     accept o.value
-    @g.send :js_strict_equal, 1
+    @g.meta_send_op_equal @g.find_literal(:js_strict_equal)
 
     alt = @g.new_label
     done = @g.new_label
@@ -611,26 +679,6 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   def visit_OpEqualNode(o)
     accept o.value
     assign_to o.left
-  end
-
-  [
-    [:OpAndEqual, '&='],
-    [:OpDivideEqual, '/='],
-    [:OpLShiftEqual, '<<='],
-    [:OpMinusEqual, '-='],
-    [:OpModEqual, '%='],
-    [:OpMultiplyEqual, '*='],
-    [:OpOrEqual, '|='],
-    [:OpPlusEqual, '+='],
-    [:OpRShiftEqual, '>>='],
-    [:OpURShiftEqual, '>>>='],
-    [:OpXOrEqual, '^='],
-  ].each do |name,op|
-    define_method(:"visit_#{name}Node") do |o|
-      # Need to address double-evaluation of o.left
-      raise NotImplementedError, "#{name}Node"
-      "#{o.left.accept(self)} #{op} #{o.value.accept(self)}"
-    end
   end
 end
 
