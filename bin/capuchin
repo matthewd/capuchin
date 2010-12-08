@@ -36,7 +36,7 @@ g.local_count = 0
 g.local_names = []
 
 ast.accept(Capuchin::Visitor::DeclScanner.new(scope))
-scope.append_method_definitions g, visitor
+scope.append_buffered_definitions g, visitor
 ast.accept(visitor)
 
 g.push_nil

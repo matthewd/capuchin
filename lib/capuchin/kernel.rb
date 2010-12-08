@@ -1,6 +1,6 @@
 
 module JSOpen
-  def js_hash; @js_hash ||= {}; end
+  def js_hash; @js_hash ||= Rubinius::LookupTable.new; end
   def _js_key?(k); js_hash.key?(k); end
   def _js_get(k); js_hash[k]; end
   def _js_set(k,v); js_hash[k] = v; end
@@ -26,60 +26,95 @@ module Kernel
   def js_typeof; 'object'; end
   def js_equal(v); self == v; end
   def js_strictly_equal(v); eql?(v); end
-  def js_respond_to?(name); respond_to?("js:#{name}"); end
   def js_in(k)
     if respond_to?(:_js_get)
-      if respond_to?(:_js_key?) && _js_key?(name)
-        return true
-      elsif self._js_get(name)
+      if respond_to?(:_js_key?)
+        if _js_key?(name)
+          return true
+        end
+      elsif _js_get(name)
         return true
       end
     end
 
-    js_respond_to?(k)
+    respond_to?(:"js:#{k}")
   end
   def js_get(name)
-    if respond_to?(:"js:get:#{name}")
-      return send(:"js:get:#{name}")
+    getter = :"js:get:#{name}"
+    if respond_to?(getter)
+      return send(getter)
     end
 
     if respond_to?(:_js_get)
-      if respond_to?(:_js_key?) && _js_key?(name)
-        return self._js_get(name)
-      elsif v = self._js_get(name)
+      if respond_to?(:_js_key?)
+        if _js_key?(name)
+          return _js_get(name)
+        end
+      elsif v = _js_get(name)
         return v
       end
     end
 
-    if js_respond_to?(name)
-      meth = method("js:#{name}")
-      if meth.owner < self.class
-        # The method belongs to the object's metaclass
-        (class << self; @js_methods || {}; end)["js:#{name}".to_sym] || meth
-      else
-        meth
-      end
+    accessor = :"js:#{name}"
+    if respond_to?(accessor)
+      meth = js_method(accessor)
     end
   end
   def js_set(name, value)
-    if respond_to?(:"js:set:#{name}")
-      return send(:"js:set:#{name}", value)
+    setter = :"js:set:#{name}"
+    if respond_to?(setter)
+      return send(setter, value)
     end
 
     if UnboundMethod === value || Capuchin::Function === value
-      (class << self; self; end).send(:_js_define_method, "js:#{name}") do |*args|
+      metaclass.send(:_js_define_method, :"js:#{name}") do |*args|
         instance_exec(*args, &value)
       end
       return value
     end
-    self._js_set(name, value)
+    _js_set(name, value)
   end
   def js_invoke(name, *args)
-    if !js_respond_to?(name) && f = js_get(name)
+    accessor = :"js:#{name}"
+    if respond_to?(accessor)
+      send(accessor, *args)
+    elsif f = js_get(name)
       f.js_call(self, *args)
     else
-      send("js:#{name}", *args)
+      # Do the send anyway, for the exception
+      send(accessor, *args)
     end
+  end
+  def js_method(name)
+    meth = method(name)
+    if meth.owner == metaclass
+      t = metaclass.instance_variable_get(:@js_methods)
+      t && t[name] || meth
+    else
+      meth
+    end
+  end
+end
+def test_js_respond_to(name, *args)
+  respond_to?(:"js:#{name}")
+end
+def invoke_js_respond_to(name, *args)
+  send(:"js:#{name}", *args)
+end
+def invoke_js_get(name, *args)
+  js_get(name).js_call(self, *args)
+end
+def Rubinius.bind_call(recv, meth, *args)
+  # meth == :js_invoke
+  case meth
+  when :js_invoke
+    Rubinius::CallUnit.test(
+      Rubinius::CallUnit.for_method(method(:test_js_respond_to)),
+      Rubinius::CallUnit.for_method(method(:invoke_js_respond_to)),
+      Rubinius::CallUnit.for_method(method(:invoke_js_get))
+    )
+  else
+    raise ArgumentError, "bind_call for unknown '#{meth}'"
   end
 end
 class Capuchin::Proto
@@ -92,7 +127,7 @@ class Capuchin::Function
     @block = block || lambda {}
     @proto = Capuchin::Proto.new
     @module = mod
-    self._js_set(:prototype, @proto)
+    _js_set(:prototype, @proto)
     object.each do |k,v|
       _js_set(k, v)
     end
@@ -103,30 +138,30 @@ class Class
   def js_instance_of(v); self === v; end
   def js_expose_method(*names)
     names.each do |name|
-      alias_method "js:#{name}", name
+      alias_method :"js:#{name}", name
     end
   end
   def js_expose_attr(*names)
     names.each do |name|
-      alias_method "js:get:#{name}", name
-      if method_defined?("#{name}=")
-        alias_method "js:set:#{name}", "#{name}="
+      alias_method :"js:get:#{name}", name
+      if method_defined?(:"#{name}=")
+        alias_method :"js:set:#{name}", :"#{name}="
       end
     end
   end
   def js_def(name, &block)
-    _js_define_method("js:#{name}", &block)
+    _js_define_method(:"js:#{name}", &block)
   end
   def js_attr(name, &block)
     name = name.to_s.dup
     if name.sub!(/=$/, '')
-      _js_define_method("js:set:#{name}", &block)
+      _js_define_method(:"js:set:#{name}", &block)
     else
-      _js_define_method("js:get:#{name}", &block)
+      _js_define_method(:"js:get:#{name}", &block)
     end
   end
   def _js_define_method(name, &block)
-    (@js_methods ||= {})[name.to_sym] = Capuchin::Function.new(&block)
+    (@js_methods ||= Rubinius::LookupTable.new)[name] = Capuchin::Function.new(&block)
     define_method(name, &block)
   end
 end
@@ -183,7 +218,7 @@ class Method
   def js_prototype
     @proto || (
       @proto = Capuchin::Proto.new
-      self._js_set(:prototype, @proto)
+      _js_set(:prototype, @proto)
     )
   end
   def js_typeof; 'function'; end
@@ -214,7 +249,7 @@ class UnboundMethod
   def js_prototype
     @proto || (
       @proto = Capuchin::Proto.new
-      self._js_set(:prototype, @proto)
+      _js_set(:prototype, @proto)
     )
   end
   def js_typeof; 'function'; end
@@ -240,7 +275,7 @@ end
 class Capuchin::Obj
   include JSOpen
   def initialize(constructor, proto)
-    self._js_set(:constructor, constructor)
+    _js_set(:constructor, constructor)
     @__proto__ = proto
   end
   def js_get(name)
@@ -248,18 +283,6 @@ class Capuchin::Obj
   end
   def js_in(k)
     super || @__proto__.js_in(k)
-  end
-  def js_invoke(name, *args)
-    if js_respond_to?(name)
-      send("js:#{name}", *args)
-    elsif f = js_get(name)
-      f.js_call(self, *args)
-    elsif f = @__proto__.js_get(name)
-      f.js_call(self, *args)
-    else
-      # Do the send anyway, for the exception
-      send("js:#{name}", *args)
-    end
   end
   def to_f
     js_value.to_f
