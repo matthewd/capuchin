@@ -170,10 +170,19 @@ class Array
   js_attr :length do
     size
   end
+  js_attr :length= do |n|
+    if n > size
+      slice!(n, size)
+    elsif n < size
+      fill(0, size, n)
+    end
+  end
   js_expose_method :push
 
-  def _js_get(k); Fixnum === k ? self[k] : nil; end
-  def _js_set(k,v); self[k] = v; end
+  def js_hash; @js_hash ||= Rubinius::LookupTable.new; end
+  def _js_key?(k); Fixnum === k ? k <= size : js_hash.key?(k); end
+  def _js_get(k); Fixnum === k ? self[k] : js_hash[k]; end
+  def _js_set(k,v); Fixnum === k ? self[k] = v : js_hash[k] = v; end
 
   def self.js_new(*args)
     new(*args)
@@ -181,6 +190,9 @@ class Array
 end
 class Integer
   def js_div(n); n == 0 ? self.to_f / n : self / n; end
+  js_def :valueOf do
+    self
+  end
 end
 class Fixnum
   def js_key; self; end
@@ -203,6 +215,13 @@ class Symbol
   def js_key; self; end
 end
 class String
+  js_attr :length do
+    size
+  end
+  js_expose_method :substring
+  js_def :indexOf do |needle|
+    index(needle) || -1
+  end
   def js_key; intern; end
   def js_truthy?; size > 0; end
   def js_typeof; 'string'; end
@@ -296,6 +315,10 @@ class Capuchin::Obj
   def to_str
     js_value.to_s
   end
+  def self.js_new
+    @empty_proto ||= Capuchin::Proto.new
+    new(nil, @empty_proto)
+  end
 end
 class Capuchin::Function
   def call(*args)
@@ -334,12 +357,21 @@ end
 
 Capuchin::Globals = Rubinius::LookupTable.new
 Capuchin::Globals[:Array] = Array
+Capuchin::Globals[:Object] = Capuchin::Obj
 Capuchin::Globals[:Date] = Capuchin::Function.new('Date', {}, Capuchin::DateMethods) {|| @t = Time.new }
 Capuchin::Globals[:print] = Capuchin::Function.new {|x| puts x }
 Capuchin::Globals[:p] = Capuchin::Function.new {|x| p [x, x.methods.grep(/^js:/)] }
 Capuchin::Globals[:Math] = {
   :log => Capuchin::Function.new {|n| Math.log(n.js_value) },
   :pow => Capuchin::Function.new {|a,b| a.js_value ** b.js_value },
+  :sqrt => Capuchin::Function.new {|n| Math.sqrt(n.js_value) },
   :E => Math::E,
 }
+Capuchin::Globals[:run] = Capuchin::Globals[:load] = Capuchin::Function.new do |filename|
+  cx = Capuchin::Context.new
+  start = Time.now
+  cx.load(filename)
+  done = Time.now
+  (done - start) * 1000
+end
 

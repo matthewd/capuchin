@@ -1,12 +1,12 @@
 
-var a = 2;
-var b = 3;
+var aa = 2;
+var bb = 3;
 
-var x = function(n) { var b = a * n; return b; };
+var xx = function(n) { var bb = aa * n; return bb; };
 
-var c = x(b);
+var cc = xx(bb);
 
-print(a);
-print(b);
-print(c);
+print(aa);
+print(bb);
+print(cc);
 
