@@ -1,0 +1,61 @@
+#!/usr/bin/env ruby
+
+$: << File.join(File.dirname(File.dirname(__FILE__)), "lib")
+
+require "capuchin"
+
+filename = File.exist?(ARGV.first) ? ARGV.shift : 'eg/math.js'
+parser = RKelly::Parser.new
+class << parser
+  # A mostly-futile attempt to get the parser to tell us why it fails
+  def yyerror; yyabort; end
+  def yyabort
+    raise ParseError, sprintf("\nparse error on value %s (%s)",
+                              @racc_val.inspect, token_to_str(@racc_t) || '?')
+  end
+end
+ast = parser.parse(File.read(filename))
+
+g = Capuchin::Generator.new
+scope = Capuchin::Visitor::Scope.new(nil)
+visitor = Capuchin::Visitor.new(g, scope)
+
+Rubinius::AST::AsciiGrapher.new(ast, RKelly::Nodes::Node).print
+
+code = Object.new
+
+g.name = :call
+g.file = filename.intern
+g.set_line 1
+
+g.required_args = 0
+g.total_args = 0
+g.splat_index = nil
+
+g.local_count = 0
+g.local_names = []
+
+ast.accept(Capuchin::Visitor::DeclScanner.new(scope))
+scope.append_method_definitions g, visitor
+ast.accept(visitor)
+
+g.push_nil
+g.ret
+g.close
+
+g.local_count = g.state.scope.local_count
+g.local_names = g.state.scope.local_names
+
+g.encode
+cm = g.package ::Rubinius::CompiledMethod
+#puts cm.decode #if $DEBUG
+
+p = Rubinius::Compiler::MethodPrinter.new
+p.bytecode = true
+p.print_method(cm)
+
+ss = ::Rubinius::StaticScope.new Object
+::Rubinius.attach_method g.name, cm, ss, code
+
+code.send(g.name)
+

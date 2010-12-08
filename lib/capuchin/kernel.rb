@@ -1,0 +1,322 @@
+
+module JSOpen
+  def js_hash; @js_hash ||= {}; end
+  def _js_key?(k); js_hash.key?(k); end
+  def _js_get(k); js_hash[k]; end
+  def _js_set(k,v); js_hash[k] = v; end
+end
+class Hash
+  def _js_key?(k); key?(k); end
+  def _js_get(k); self[k]; end
+  def _js_set(k,v); self[k] = v; end
+end
+
+module Kernel
+  def js_value; js_invoke(:valueOf); end
+  def js_div(n); self / n; end
+  def js_add(other)
+    if Numeric === self && Numeric === other
+      self + other
+    else
+      "#{self}#{other}"
+    end
+  end
+  def js_key; to_s.intern; end
+  def js_truthy?; self; end
+  def js_typeof; 'object'; end
+  def js_equal(v); self == v; end
+  def js_strictly_equal(v); eql?(v); end
+  def js_respond_to?(name); respond_to?("js:#{name}"); end
+  def js_in(k)
+    if respond_to?(:_js_get)
+      if respond_to?(:_js_key?) && _js_key?(name)
+        return true
+      elsif self._js_get(name)
+        return true
+      end
+    end
+
+    js_respond_to?(k)
+  end
+  def js_get(name)
+    if respond_to?(:"js:get:#{name}")
+      return send(:"js:get:#{name}")
+    end
+
+    if respond_to?(:_js_get)
+      if respond_to?(:_js_key?) && _js_key?(name)
+        return self._js_get(name)
+      elsif v = self._js_get(name)
+        return v
+      end
+    end
+
+    if js_respond_to?(name)
+      meth = method("js:#{name}")
+      if meth.owner < self.class
+        # The method belongs to the object's metaclass
+        (class << self; @js_methods || {}; end)["js:#{name}".to_sym] || meth
+      else
+        meth
+      end
+    end
+  end
+  def js_set(name, value)
+    if respond_to?(:"js:set:#{name}")
+      return send(:"js:set:#{name}", value)
+    end
+
+    if UnboundMethod === value || Capuchin::Function === value
+      (class << self; self; end).send(:_js_define_method, "js:#{name}") do |*args|
+        instance_exec(*args, &value)
+      end
+      return value
+    end
+    self._js_set(name, value)
+  end
+  def js_invoke(name, *args)
+    if !js_respond_to?(name) && f = js_get(name)
+      f.js_call(self, *args)
+    else
+      send("js:#{name}", *args)
+    end
+  end
+end
+class Capuchin::Proto
+  include JSOpen
+end
+class Capuchin::Function
+  include JSOpen
+  def initialize(name=nil, object={}, mod=nil, &block)
+    @name = name
+    @block = block || lambda {}
+    @proto = Capuchin::Proto.new
+    @module = mod
+    self._js_set(:prototype, @proto)
+    object.each do |k,v|
+      _js_set(k, v)
+    end
+  end
+end
+class Class
+  def js_new(*args); new(*args); end
+  def js_instance_of(v); self === v; end
+  def js_expose_method(*names)
+    names.each do |name|
+      alias_method "js:#{name}", name
+    end
+  end
+  def js_expose_attr(*names)
+    names.each do |name|
+      alias_method "js:get:#{name}", name
+      if method_defined?("#{name}=")
+        alias_method "js:set:#{name}", "#{name}="
+      end
+    end
+  end
+  def js_def(name, &block)
+    _js_define_method("js:#{name}", &block)
+  end
+  def js_attr(name, &block)
+    name = name.to_s.dup
+    if name.sub!(/=$/, '')
+      _js_define_method("js:set:#{name}", &block)
+    else
+      _js_define_method("js:get:#{name}", &block)
+    end
+  end
+  def _js_define_method(name, &block)
+    (@js_methods ||= {})[name.to_sym] = Capuchin::Function.new(&block)
+    define_method(name, &block)
+  end
+end
+
+class Array
+  js_attr :length do
+    size
+  end
+  js_expose_method :push
+
+  def _js_get(k); Fixnum === k ? self[k] : nil; end
+  def _js_set(k,v); self[k] = v; end
+
+  def self.js_new(*args)
+    new(*args)
+  end
+end
+class Integer
+  def js_div(n); n == 0 ? self.to_f / n : self / n; end
+end
+class Fixnum
+  def js_key; self; end
+  def js_truthy?; 0 != self; end
+  def js_typeof; 'number'; end
+end
+class Float
+  def js_typeof; 'number'; end
+  js_def :toFixed do |x|
+    self.to_i
+  end
+  js_def :valueOf do
+    self
+  end
+  js_def :toPrecision do |digits|
+    "%.#{digits}f" % self
+  end
+end
+class Symbol
+  def js_key; self; end
+end
+class String
+  def js_key; intern; end
+  def js_truthy?; size > 0; end
+  def js_typeof; 'string'; end
+end
+class TrueClass
+  def js_typeof; 'boolean'; end
+end
+class FalseClass
+  def js_typeof; 'boolean'; end
+end
+class Method
+  include JSOpen
+  def js_prototype
+    @proto || (
+      @proto = Capuchin::Proto.new
+      self._js_set(:prototype, @proto)
+    )
+  end
+  def js_typeof; 'function'; end
+  def js_call(target, *args)
+    if receiver.eql? target
+      call(*args)
+    else
+      unbind.bind(target).call(*args)
+    end
+  end
+  def js_apply(target, args)
+    js_call(target, *args)
+  end
+  js_def :call do |this, *args|
+    js_call(this, *args)
+  end
+  js_def :apply do |this, args|
+    js_call(this, *args)
+  end
+  def js_new(*args)
+    o = Capuchin::Obj.new(self, js_prototype)
+    js_call(o, *args)
+    o
+  end
+end
+class UnboundMethod
+  include JSOpen
+  def js_prototype
+    @proto || (
+      @proto = Capuchin::Proto.new
+      self._js_set(:prototype, @proto)
+    )
+  end
+  def js_typeof; 'function'; end
+  def js_call(target, *args)
+    bind(target).call(*args)
+  end
+  def js_apply(target, args)
+    js_call(target, *args)
+  end
+  js_def :call do |this, *args|
+    js_call(this, *args)
+  end
+  js_def :apply do |this, args|
+    js_call(this, *args)
+  end
+  def js_new(*args)
+    o = Capuchin::Obj.new(self, js_prototype)
+    js_call(o, *args)
+    o
+  end
+end
+
+class Capuchin::Obj
+  include JSOpen
+  def initialize(constructor, proto)
+    self._js_set(:constructor, constructor)
+    @__proto__ = proto
+  end
+  def js_get(name)
+    super || @__proto__.js_get(name)
+  end
+  def js_in(k)
+    super || @__proto__.js_in(k)
+  end
+  def js_invoke(name, *args)
+    if js_respond_to?(name)
+      send("js:#{name}", *args)
+    elsif f = js_get(name)
+      f.js_call(self, *args)
+    elsif f = @__proto__.js_get(name)
+      f.js_call(self, *args)
+    else
+      # Do the send anyway, for the exception
+      send("js:#{name}", *args)
+    end
+  end
+  def to_f
+    js_value.to_f
+  end
+  def to_i
+    js_value.to_i
+  end
+  def to_s
+    js_value.to_s
+  end
+  def to_str
+    js_value.to_s
+  end
+end
+class Capuchin::Function
+  def call(*args)
+    js_call(nil, *args)
+  end
+  js_def :call do |this, *args|
+    js_call(this, *args)
+  end
+  js_def :apply do |this, args|
+    js_call(this, *args)
+  end
+  def js_typeof; 'function'; end
+  def js_call(target, *args)
+    target.instance_exec(*args, &@block)
+  end
+  def js_apply(target, args)
+    js_call(target, *args)
+  end
+  def js_new(*args)
+    o = Capuchin::Obj.new(self, @proto)
+    js_call(o, *args)
+    o.extend(@module) if @module
+    o
+  end
+  def to_proc
+    @block
+  end
+end
+
+module Capuchin::DateMethods
+  attr :t
+  def -(other)
+    (t - other.t) * 1000
+  end
+end
+
+Capuchin::Globals = Rubinius::LookupTable.new
+Capuchin::Globals[:Array] = Array
+Capuchin::Globals[:Date] = Capuchin::Function.new('Date', {}, Capuchin::DateMethods) {|| @t = Time.new }
+Capuchin::Globals[:print] = Capuchin::Function.new {|x| puts x }
+Capuchin::Globals[:p] = Capuchin::Function.new {|x| p [x, x.methods.grep(/^js:/)] }
+Capuchin::Globals[:Math] = {
+  :log => Capuchin::Function.new {|n| Math.log(n.js_value) },
+  :pow => Capuchin::Function.new {|a,b| a.js_value ** b.js_value },
+  :E => Math::E,
+}
+
