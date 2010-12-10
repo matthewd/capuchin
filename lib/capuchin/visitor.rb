@@ -658,11 +658,16 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
       @g.send :js_invoke, args.size + 1
 
     else
+      # In the simplest case, this may be a ResolveNode. But it could be
+      # any arbitrary [hopefully function returning!] expression.
+
       accept callee
+      @g.push_nil
       args.each do |arg|
         accept arg
       end
-      @g.send :call, args.size
+      @g.send :js_call, args.size + 1
+
     end
   end
   def assign_to(o)
