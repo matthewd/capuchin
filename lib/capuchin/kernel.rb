@@ -191,7 +191,14 @@ class Array
   def _js_set(k,v); Fixnum === k ? self[k] = v : js_hash[k] = v; end
 
   def self.js_new(*args)
-    new(*args)
+    if args.size == 1 && Fixnum === args.first
+      new(args.first)
+    else
+      args
+    end
+  end
+  def self.js_call(this)
+    new
   end
 end
 class Numeric
@@ -230,6 +237,9 @@ class String
   def js_key; intern; end
   def js_truthy?; size > 0; end
   def js_typeof; 'string'; end
+  def self.js_call(this, v)
+    v.to_s
+  end
 end
 class TrueClass
   include JSComparable
@@ -371,15 +381,20 @@ end
 
 Capuchin::Globals = Rubinius::LookupTable.new
 Capuchin::Globals[:Array] = Array
+Capuchin::Globals[:String] = String
 Capuchin::Globals[:Object] = Capuchin::Obj
 Capuchin::Globals[:Date] = Capuchin::Function.new('Date', {}, Capuchin::DateMethods) {|| @t = Time.new }
 Capuchin::Globals[:print] = Capuchin::Function.new {|x| puts x }
 Capuchin::Globals[:p] = Capuchin::Function.new {|x| p [x, x.methods.grep(/^js:/)] }
+Capuchin::Globals[:gc] = Capuchin::Function.new {|x| GC.start }
 Capuchin::Globals[:Math] = {
   :log => Capuchin::Function.new {|n| Math.log(n.js_value) },
   :pow => Capuchin::Function.new {|a,b| a.js_value ** b.js_value },
   :sqrt => Capuchin::Function.new {|n| Math.sqrt(n.js_value) },
+  :sin => Capuchin::Function.new {|n| Math.sin(n.js_value) },
+  :cos => Capuchin::Function.new {|n| Math.cos(n.js_value) },
   :E => Math::E,
+  :PI => Math::PI,
 }
 Capuchin::Globals[:run] = Capuchin::Globals[:load] = Capuchin::Function.new do |filename|
   cx = Capuchin::Context.new
