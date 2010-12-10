@@ -44,6 +44,8 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
       @buffered_variables = []
       @methods = []
       @need_arguments = false
+      @loops = []
+      @labels = []
     end
     def need_arguments!; @need_arguments = true; end
     def need_arguments?; @need_arguments; end
@@ -75,6 +77,46 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
         defn.call(g, v)
       end
     end
+
+    # This is confusing; line_label_name is a symbol, containing the
+    # name assigned to the line within the JS source (where it's known
+    # as a label). continue_label and break_label, on the other hand,
+    # are Rubinius generator labels for use in goto insns.
+    def with_loop(line_label_name, continue_label, break_label)
+      @loops << [line_label_name, continue_label, break_label]
+      yield
+    ensure
+      @loops.pop
+    end
+
+    def with_line_label(label)
+      @labels << label
+      yield
+    ensure
+      @labels.pop
+    end
+
+    def current_line_label
+      return nil if @labels.empty?
+      label = @labels.pop
+      @labels.push nil
+      return label
+    end
+
+    def find_continue_target(target=nil)
+      loops = @loops
+      loops = loops.select {|l| l[0] == target } if target
+      loops = loops.select {|l| l[1] }
+      return loops.last[1] unless loops.empty?
+      find_break_target(target)
+    end
+
+    def find_break_target(target=nil)
+      loops = @loops
+      loops = loops.select {|l| l[0] == target } if target
+      loops.last[2]
+    end
+
 
     def search_local(name)
       if variable = variables[name]
@@ -257,6 +299,10 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     @g.send :js_get, 1
     #@g.call_custom :js_get, 1
   end
+  def visit_RegexpNode(o)
+    # o.value
+    raise NotImplementedError, "regexp"
+  end
   def visit_StringNode(o)
     pos(o)
     str = o.value[1, o.value.size - 2]
@@ -331,23 +377,100 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     @g.send :js_new, args.size
   end
   def visit_ForInNode(o)
+    # for (LEFT in RIGHT) VALUE
+    lbl = @g.state.scope.current_line_label
     raise NotImplementedError, "for .. in"
   end
   def visit_BreakNode(o)
-    raise NotImplementedError, "break"
+    @g.goto @g.state.scope.find_break_target(o.value && o.value.to_sym)
   end
   def visit_ContinueNode(o)
-    raise NotImplementedError, "continue"
+    @g.goto @g.state.scope.find_continue_target(o.value && o.value.to_sym)
+  end
+  def visit_ThrowNode(o)
+    # o.value
+    raise NotImplementedError, "throw"
+  end
+  def visit_DeleteNode(o)
+    # o.value
+    raise NotImplementedError, "delete"
+  end
+
+  def visit_SwitchNode(o)
+    lbl = @g.state.scope.current_line_label
+    done = @g.new_label
+
+    accept o.left
+    if cases = o.value.value
+      has_default = false
+      cases = cases.map {|c| [c, @g.new_label] }
+      cases.each do |(c,code)|
+        if c.left
+          try_next = @g.new_label
+          @g.dup
+          accept c.left
+          @g.meta_send_op_equal @g.find_literal(:js_equal)
+          @g.gif try_next
+
+          # We've found a match, so ditch the spare copy of our
+          # comparison value, then run this case block. We must do the
+          # pop here because control structures aren't permitted to
+          # leave values on the stack while running arbitrary
+          # statements; it would interfere with break/continue handling.
+          @g.pop
+          @g.goto code
+          try_next.set!
+        else
+          @g.pop
+          @g.goto code
+          has_default = true
+          break
+        end
+      end
+      unless has_default
+        @g.pop
+        @g.goto done
+      end
+      @g.state.scope.with_loop lbl, nil, done do
+        cases.each do |(c,code)|
+          code.set!
+          accept c.value
+        end
+      end
+    end
+    done.set!
+  end
+  def visit_CaseClauseNode(o)
+    # o.left (nil == default), o.value
+    raise NotImplementedError, "case"
+  end
+
+  def visit_WithNode(o)
+    # o.left, o.value
+    raise NotImplementedError, "with"
+  end
+
+  def visit_LabelNode(o)
+    @g.state.scope.with_line_label(o.name.to_sym) do
+      accept o.value
+    end
   end
 
   def visit_ForNode(o)
     pos(o)
+    lbl = @g.state.scope.current_line_label
+
     if o.init
       accept o.init
+      p o.init
+      unless RKelly::Nodes::VarStatementNode === o.init
+        @g.pop
+      end
     end
 
     top = @g.new_label
     done = @g.new_label
+    continue = @g.new_label
 
     top.set!
     if o.test
@@ -355,7 +478,11 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
       @g.giz done, o.test
     end
 
-    accept o.value
+    @g.state.scope.with_loop(lbl, continue, done) do
+      accept o.value
+    end
+
+    continue.set!
     if o.counter
       accept o.counter
       @g.pop
@@ -366,6 +493,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
   def visit_DoWhileNode(o)
     pos(o)
+    lbl = @g.state.scope.current_line_label
     again = @g.new_label
 
     again.set!
@@ -375,6 +503,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
   def visit_WhileNode(o)
     pos(o)
+    lbl = @g.state.scope.current_line_label
     again = @g.new_label
     nope = @g.new_label
 
@@ -564,6 +693,18 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     @g.pop
     accept o.value
     done.set!
+  end
+  def visit_ConditionalNode(o)
+    pos(o)
+    after = @g.new_label
+    alternate = @g.new_label
+    accept o.conditions
+    @g.giz alternate, o.conditions
+    accept o.value
+    @g.goto after
+    alternate.set!
+    accept o.else
+    after.set!
   end
 
 
