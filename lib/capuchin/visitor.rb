@@ -92,6 +92,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     @g.push_state scope if scope
   end
   def pos(o)
+    @g.file = o.filename.intern if o.filename
     @g.set_line o.line unless o.line.nil?
   end
   def with_scope(scope=Scope.new(@scope))
@@ -245,11 +246,14 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     @g.send :js_get, 1
     #@g.call_custom :js_get, 1
   end
+  def key_safe?(o)
+    RKelly::Nodes::NumberNode === o && Fixnum === o.value
+  end
   def visit_BracketAccessorNode(o)
     pos(o)
     accept o.value
     accept o.accessor
-    @g.send :js_key, 0
+    @g.send :js_key, 0 unless key_safe?(o.accessor)
     @g.send :js_get, 1
     #@g.call_custom :js_get, 1
   end
@@ -423,7 +427,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     when RKelly::Nodes::BracketAccessorNode
       accept o.value
       accept o.accessor
-      @g.send :js_key, 0
+      @g.send :js_key, 0 unless key_safe?(o.accessor)
       @g.dup_many 2
       @g.send :js_get, 1
       yield 2
@@ -645,8 +649,8 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
 
     when RKelly::Nodes::BracketAccessorNode
       accept callee.value
-      accept callee.left
-      @g.send :js_key, 0
+      accept callee.accessor
+      @g.send :js_key, 0 unless key_safe?(o.accessor)
       args.each do |arg|
         accept arg
       end
@@ -685,11 +689,11 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
       accept o.value
       @g.swap
       accept o.accessor
-      @g.send :js_key, 0
+      @g.send :js_key, 0 unless key_safe?(o.accessor)
       @g.swap
       @g.send :js_set, 2
     else
-      raise "Don't know how to assign to #{o.class}"
+      raise NotImplementedError, "Don't know how to assign to #{o.class}"
     end
   end
   def visit_OpEqualNode(o)
