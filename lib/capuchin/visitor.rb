@@ -397,6 +397,11 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
 
   def visit_SwitchNode(o)
+    # We cheat here, and reach down into our case nodes, because we loop
+    # through them twice: once to build the sequence of compare+gotos,
+    # then again to output the actual code blocks.
+
+    pos(o)
     lbl = @g.state.scope.current_line_label
     done = @g.new_label
 
@@ -440,10 +445,6 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     end
     done.set!
   end
-  def visit_CaseClauseNode(o)
-    # o.left (nil == default), o.value
-    raise NotImplementedError, "case"
-  end
 
   def visit_WithNode(o)
     # o.left, o.value
@@ -451,6 +452,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
 
   def visit_LabelNode(o)
+    pos(o)
     @g.state.scope.with_line_label(o.name.to_sym) do
       accept o.value
     end
