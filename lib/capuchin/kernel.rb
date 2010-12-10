@@ -133,6 +133,12 @@ class Capuchin::Function
     end
   end
 end
+module JSComparable
+  def js_lt(other); self.js_cmp < other.js_cmp; end
+  def js_gt(other); self.js_cmp > other.js_cmp; end
+  def js_lte(other); self.js_cmp <= other.js_cmp; end
+  def js_gte(other); self.js_cmp >= other.js_cmp; end
+end
 class Class
   def js_new(*args); new(*args); end
   def js_instance_of(v); self === v; end
@@ -188,24 +194,22 @@ class Array
     new(*args)
   end
 end
-class Integer
-  def js_div(n); n == 0 ? self.to_f / n : self / n; end
+class Numeric
+  include JSComparable
+  def js_cmp; self; end
+  def js_typeof; 'number'; end
   js_def :valueOf do
     self
   end
 end
 class Fixnum
+  def js_div(n); (0 == n ? self.to_f : self) / n; end
   def js_key; self; end
   def js_truthy?; 0 != self; end
-  def js_typeof; 'number'; end
 end
 class Float
-  def js_typeof; 'number'; end
   js_def :toFixed do |x|
     self.to_i
-  end
-  js_def :valueOf do
-    self
   end
   js_def :toPrecision do |digits|
     "%.#{digits}f" % self
@@ -215,6 +219,7 @@ class Symbol
   def js_key; self; end
 end
 class String
+  def js_cmp; to_f; end
   js_attr :length do
     size
   end
@@ -227,10 +232,19 @@ class String
   def js_typeof; 'string'; end
 end
 class TrueClass
+  include JSComparable
+  def js_cmp; 1; end
   def js_typeof; 'boolean'; end
 end
 class FalseClass
+  include JSComparable
+  def js_cmp; 0; end
   def js_typeof; 'boolean'; end
+end
+class NilClass
+  include JSComparable
+  def js_cmp; 0; end
+  def js_div(n); 0.js_div(n); end
 end
 class Method
   include JSOpen

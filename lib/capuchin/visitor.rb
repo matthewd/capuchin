@@ -483,8 +483,8 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   [
     [ :Add,       :js_add,  :OpPlusEqual,   :meta_send_op_plus  ],
     [ :Subtract,  :-,       :OpMinusEqual,  :meta_send_op_minus ],
-    [ :Greater,   :>,       nil,            :meta_send_op_gt    ],
-    [ :Less,      :<,       nil,            :meta_send_op_lt    ],
+    [ :Greater,   :js_gt,   nil,            :meta_send_op_gt    ],
+    [ :Less,      :js_lt,   nil,            :meta_send_op_lt    ],
   ].each do |name,op,eq,meta|
     define_method(:"visit_#{name}Node") do |o|
       pos(o)
@@ -513,8 +513,8 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     [ :Multiply,            :*,       :OpMultiplyEqual ],
     [ :RightShift,          :>>,      :OpRShiftEqual   ],
     [ :UnsignedRightShift,  :">>>",   :OpURShiftEqual  ],
-    [ :GreaterOrEqual,      :>=,      nil              ],
-    [ :LessOrEqual,         :<=,      nil              ],
+    [ :GreaterOrEqual,      :js_gte,  nil              ],
+    [ :LessOrEqual,         :js_lte,  nil              ],
   ].each do |name,op,eq|
     define_method(:"visit_#{name}Node") do |o|
       pos(o)
