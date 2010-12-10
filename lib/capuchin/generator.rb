@@ -7,8 +7,6 @@ class Capuchin::Generator < Rubinius::Generator
     RKelly::Nodes::FalseNode
     RKelly::Nodes::NullNode
     RKelly::Nodes::LogicalNotNode
-    RKelly::Nodes::LogicalAndNode
-    RKelly::Nodes::LogicalOrNode
     RKelly::Nodes::EqualNode
     RKelly::Nodes::StrictEqualNode
     RKelly::Nodes::NotEqualNode
@@ -22,8 +20,20 @@ class Capuchin::Generator < Rubinius::Generator
     RKelly::Nodes::VoidNode
   )
 
+  def bool_safe?(o)
+    if BoolSafeNodes.include?(o.class.name)
+      return true
+    end
+
+    if RKelly::Nodes::LogicalAndNode === o || RKelly::Nodes::LogicalOrNode === o
+      bool_safe?(o.left) && bool_safe?(o.value)
+    end
+
+    false
+  end
+
   def giz(label, src=nil)
-    if src && BoolSafeNodes.include?(src.class.name)
+    if src && bool_safe?(src)
       gif label
     else
       not_easy = new_label
@@ -39,7 +49,7 @@ class Capuchin::Generator < Rubinius::Generator
     end
   end
   def gnz(label, src=nil)
-    if src && BoolSafeNodes.include?(src.class.name)
+    if src && bool_safe?(src)
       git label
     else
       do_pop = new_label
