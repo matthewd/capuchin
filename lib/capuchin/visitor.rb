@@ -261,15 +261,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     end
   end
   def visit_ResolveNode(o)
-    pos(o)
-    if ref = @g.state.scope.search_local(o.value.to_sym)
-      ref.get_bytecode(@g)
-    else
-      @g.push_const :Capuchin
-      @g.find_const :Globals
-      @g.push_literal o.value.to_sym
-      @g.send :[], 1
-    end
+    o.get_bytecode(self, @g)
   end
   def visit_ExpressionStatementNode(o)
     accept o.value
@@ -284,22 +276,13 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     @g.make_array o.value.size
   end
   def visit_DotAccessorNode(o)
-    accept o.value
-    pos(o)
-    @g.push_literal o.accessor.to_sym
-    @g.send :js_get, 1
-    #@g.call_custom :js_get, 1
+    o.get_bytecode(self, @g)
   end
   def key_safe?(o)
     RKelly::Nodes::NumberNode === o && Fixnum === o.value
   end
   def visit_BracketAccessorNode(o)
-    accept o.value
-    accept o.accessor
-    pos(o)
-    @g.send :js_key, 0 unless key_safe?(o.accessor)
-    @g.send :js_get, 1
-    #@g.call_custom :js_get, 1
+    o.get_bytecode(self, @g)
   end
   def visit_RegexpNode(o)
     # o.value
@@ -371,9 +354,9 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     accept o.value
   end
   def visit_NewExprNode(o)
-    accept o.value
+    # see also: call_bytecode in nodes.rb
     args = o.arguments.value
-    args.each do |arg|
+    o.arguments.value.each do |arg|
       accept arg
     end
     pos(o)
@@ -531,55 +514,6 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     nope.set!
   end
 
-  # Before yield, loads the current value from 'o' and puts it on the
-  # stack. May put other things on the stack for its own use too; will
-  # give the number of such elements in the yield, so you can reach past
-  # them if you need to.
-  #
-  # When the yield returns, the stack must be the same height it was
-  # when the yield began. Presumably you have modified the value at the
-  # top; that value will be copied back into the variable referenced by
-  # 'o'.
-  #
-  # Upon return, the stack will contain the calculated value (that is,
-  # the value at the top of the stack after the yield); this function's
-  # net stack impact is thus +1.
-  def get_and_set(o)
-    case o
-    when RKelly::Nodes::ResolveNode
-      if ref = @g.state.scope.search_local(o.value.to_sym)
-        ref.get_bytecode(@g)
-        yield 0
-        ref.set_bytecode(@g)
-      else
-        @g.push_const :Capuchin
-        @g.find_const :Globals
-        @g.push_literal o.value.to_sym
-        @g.dup_many 2
-        @g.send :[], 1
-        yield 2
-        @g.send :[]=, 2
-      end
-    when RKelly::Nodes::DotAccessorNode
-      accept o.value
-      @g.push_literal o.accessor.to_sym
-      @g.dup_many 2
-      @g.send :js_get, 1
-      yield 2
-      @g.send :js_set, 2
-    when RKelly::Nodes::BracketAccessorNode
-      accept o.value
-      accept o.accessor
-      @g.send :js_key, 0 unless key_safe?(o.accessor)
-      @g.dup_many 2
-      @g.send :js_get, 1
-      yield 2
-      @g.send :js_set, 2
-    else
-      raise NotImplementedError, "Don't know how to get+set #{o.class}"
-    end
-  end
-
   def visit_TryNode(o)
     # FIXME: Ignores catch
     accept o.value
@@ -599,7 +533,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
 
   def visit_PrefixNode(o)
-    get_and_set(o.operand) do
+    o.operand.get_and_set_bytecode(self, @g) do |n|
       @g.meta_push_1
       case o.value
       when '++'
@@ -610,7 +544,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     end
   end
   def visit_PostfixNode(o)
-    get_and_set(o.operand) do |n|
+    o.operand.get_and_set_bytecode(self, @g) do |n|
       @g.dup
       @g.move_down n + 1 if n > 0
       @g.meta_push_1
@@ -639,7 +573,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     end
     if eq
       define_method(:"visit_#{eq}Node") do |o|
-        get_and_set(o.left) do
+        o.left.get_and_set_bytecode(self, @g) do |n|
           accept o.value
           pos(o)
           @g.__send__ meta, @g.find_literal(op)
@@ -669,7 +603,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     end
     if eq
       define_method(:"visit_#{eq}Node") do |o|
-        get_and_set(o.left) do
+        o.left.get_and_set_bytecode(self, @g) do |n|
           accept o.value
           pos(o)
           @g.send op, 1
@@ -792,83 +726,20 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
 
   def visit_FunctionCallNode(o)
-    callee = o.value
-    args = o.arguments.value
-
-    case callee
-    when RKelly::Nodes::DotAccessorNode
-      accept callee.value
-      pos(callee)
-      @g.push_literal callee.accessor.to_sym
-      args.each do |arg|
+    pos(o)
+    o.value.call_bytecode(self, @g) do
+      o.arguments.value.each do |arg|
         accept arg
       end
-      pos(o)
-      #@g.call_custom :js_invoke, args.size + 1
-      @g.send :js_invoke, args.size + 1
 
-    when RKelly::Nodes::BracketAccessorNode
-      accept callee.value
-      accept callee.accessor
-      pos(callee)
-      @g.send :js_key, 0 unless key_safe?(o.accessor)
-      args.each do |arg|
-        accept arg
-      end
-      pos(o)
-      #@g.call_custom :js_invoke, args.size + 1
-      @g.send :js_invoke, args.size + 1
-
-    else
-      # In the simplest case, this may be a ResolveNode. But it could be
-      # any arbitrary [hopefully function returning!] expression.
-
-      accept callee
-      pos(callee)
-      @g.push_nil
-      args.each do |arg|
-        accept arg
-      end
-      pos(o)
-      @g.send :js_call, args.size + 1
-
+      # block must return the number of arguments
+      o.arguments.value.size
     end
   end
   def visit_OpEqualNode(o)
-    case o.left
-    when RKelly::Nodes::ResolveNode
-      if ref = @g.state.scope.search_local(o.left.value.to_sym)
-        accept o.value
-        pos(o.left)
-        ref.set_bytecode(@g)
-      else
-        pos(o.left)
-        @g.push_const :Capuchin
-        @g.find_const :Globals
-        @g.push_literal o.left.value.to_sym
-        accept o.value
-        pos(o)
-        @g.send :[]=, 2
-      end
-    when RKelly::Nodes::DotAccessorNode
-      accept o.left.value
-      pos(o.left.accessor)
-      @g.push_literal o.left.accessor.to_sym
+    pos(o)
+    o.left.set_bytecode(self, @g) do
       accept o.value
-      pos(o)
-      @g.send :js_set, 2
-    when RKelly::Nodes::BracketAccessorNode
-      accept o.left.value
-      accept o.left.accessor
-      unless key_safe?(o.left.accessor)
-        pos(o.left.accessor)
-        @g.send :js_key, 0
-      end
-      accept o.value
-      pos(o)
-      @g.send :js_set, 2
-    else
-      raise NotImplementedError, "Don't know how to assign to #{o.left.class}"
     end
   end
 end
