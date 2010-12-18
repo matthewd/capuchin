@@ -240,6 +240,8 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
       meth.local_count = meth.state.scope.local_count
       meth.local_names = meth.state.scope.local_names
 
+      meth.set_line line
+
       meth.push_nil
       meth.ret
       meth.close
@@ -249,11 +251,11 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
 
   def visit_VarDeclNode(o)
-    pos(o)
-
     var = @g.state.scope.variables[o.name.to_sym]
     if o.value
       accept o.value
+
+      pos(o)
       var.reference.set_bytecode(@g)
       @g.pop
     end
@@ -270,20 +272,20 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     end
   end
   def visit_ExpressionStatementNode(o)
-    pos(o)
     accept o.value
+    pos(o)
     @g.pop
   end
   def visit_ArrayNode(o)
-    pos(o)
     o.value.each do |entry|
       accept entry
     end
+    pos(o)
     @g.make_array o.value.size
   end
   def visit_DotAccessorNode(o)
-    pos(o)
     accept o.value
+    pos(o)
     @g.push_literal o.accessor.to_sym
     @g.send :js_get, 1
     #@g.call_custom :js_get, 1
@@ -292,9 +294,9 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     RKelly::Nodes::NumberNode === o && Fixnum === o.value
   end
   def visit_BracketAccessorNode(o)
-    pos(o)
     accept o.value
     accept o.accessor
+    pos(o)
     @g.send :js_key, 0 unless key_safe?(o.accessor)
     @g.send :js_get, 1
     #@g.call_custom :js_get, 1
@@ -334,13 +336,14 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     @g.pop
   end
   def visit_IfNode(o)
-    pos(o)
     accept o.conditions
+    pos(o)
     after = @g.new_label
     if o.else
       alternate = @g.new_label
       @g.giz alternate, o.conditions
       accept o.value
+      pos(o.else)
       @g.goto after
       alternate.set!
       accept o.else
@@ -351,29 +354,29 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     after.set!
   end
   def visit_TypeOfNode(o)
-    pos(o)
     accept o.value
+    pos(o)
     @g.send :js_typeof, 0
   end
   def visit_VoidNode(o)
-    pos(o)
     accept o.value
+    pos(o)
     @g.pop
     @g.push_nil
   end
   def visit_CommaNode(o)
-    pos(o)
     accept o.left
+    pos(o)
     @g.pop
     accept o.value
   end
   def visit_NewExprNode(o)
-    pos(o)
     accept o.value
     args = o.arguments.value
     args.each do |arg|
       accept arg
     end
+    pos(o)
     @g.send :js_new, args.size
   end
   def visit_ForInNode(o)
@@ -382,9 +385,11 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     raise NotImplementedError, "for .. in"
   end
   def visit_BreakNode(o)
+    pos(o)
     @g.goto @g.state.scope.find_break_target(o.value && o.value.to_sym)
   end
   def visit_ContinueNode(o)
+    pos(o)
     @g.goto @g.state.scope.find_continue_target(o.value && o.value.to_sym)
   end
   def visit_ThrowNode(o)
@@ -401,17 +406,18 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     # through them twice: once to build the sequence of compare+gotos,
     # then again to output the actual code blocks.
 
-    pos(o)
     lbl = @g.state.scope.current_line_label
     done = @g.new_label
 
     accept o.left
+    pos(o)
     if cases = o.value.value
       has_default = false
       cases = cases.map {|c| [c, @g.new_label] }
       cases.each do |(c,code)|
         if c.left
           try_next = @g.new_label
+          pos(c.left)
           @g.dup
           accept c.left
           @g.meta_send_op_equal @g.find_literal(:js_equal)
@@ -426,6 +432,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
           @g.goto code
           try_next.set!
         else
+          pos(c)
           @g.pop
           @g.goto code
           has_default = true
@@ -433,6 +440,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
         end
       end
       unless has_default
+        pos(o)
         @g.pop
         @g.goto done
       end
@@ -464,8 +472,8 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
 
     if o.init
       accept o.init
-      p o.init
       unless RKelly::Nodes::VarStatementNode === o.init
+        pos(o.init)
         @g.pop
       end
     end
@@ -477,6 +485,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     top.set!
     if o.test
       accept o.test
+      pos(o.test)
       @g.giz done, o.test
     end
 
@@ -487,33 +496,36 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     continue.set!
     if o.counter
       accept o.counter
+      pos(o.counter)
       @g.pop
     end
+    pos(o)
     @g.goto top
 
     done.set!
   end
   def visit_DoWhileNode(o)
-    pos(o)
     lbl = @g.state.scope.current_line_label
     again = @g.new_label
 
     again.set!
     accept o.left
     accept o.value
+    pos(o)
     @g.giz again, o.value
   end
   def visit_WhileNode(o)
-    pos(o)
     lbl = @g.state.scope.current_line_label
     again = @g.new_label
     nope = @g.new_label
 
     again.set!
     accept o.left
+    pos(o)
     @g.giz nope, o.left
 
     accept o.value
+    pos(o)
     @g.goto again
 
     nope.set!
@@ -579,6 +591,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
 
     if o.value
       accept o.value
+      pos(o)
     else
       @g.push_nil
     end
@@ -608,6 +621,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
         @g.meta_send_op_minus @g.find_literal(:-)
       end
     end
+    pos(o)
     @g.pop
   end
 
@@ -618,16 +632,16 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     [ :Less,      :js_lt,   nil,            :meta_send_op_lt    ],
   ].each do |name,op,eq,meta|
     define_method(:"visit_#{name}Node") do |o|
-      pos(o)
       accept o.left
       accept o.value
+      pos(o)
       @g.__send__ meta, @g.find_literal(op)
     end
     if eq
       define_method(:"visit_#{eq}Node") do |o|
-        pos(o)
         get_and_set(o.left) do
           accept o.value
+          pos(o)
           @g.__send__ meta, @g.find_literal(op)
         end
       end
@@ -648,16 +662,16 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     [ :LessOrEqual,         :js_lte,  nil              ],
   ].each do |name,op,eq|
     define_method(:"visit_#{name}Node") do |o|
-      pos(o)
       accept o.left
       accept o.value
+      pos(o)
       @g.send op, 1
     end
     if eq
       define_method(:"visit_#{eq}Node") do |o|
-        pos(o)
         get_and_set(o.left) do
           accept o.value
+          pos(o)
           @g.send op, 1
         end
       end
@@ -665,10 +679,10 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
 
   def visit_LogicalNotNode(o)
-    pos(o)
     a = @g.new_label
     b = @g.new_label
     accept o.value
+    pos(o)
     @g.gnz a, o.value
     @g.push_true
     @g.goto b
@@ -677,9 +691,9 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     b.set!
   end
   def visit_LogicalAndNode(o)
-    pos(o)
     done = @g.new_label
     accept o.left
+    pos(o)
     @g.dup
     @g.giz done, o.left
     @g.pop
@@ -687,9 +701,9 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     done.set!
   end
   def visit_LogicalOrNode(o)
-    pos(o)
     done = @g.new_label
     accept o.left
+    pos(o)
     @g.dup
     @g.gnz done, o.left
     @g.pop
@@ -697,12 +711,13 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     done.set!
   end
   def visit_ConditionalNode(o)
-    pos(o)
     after = @g.new_label
     alternate = @g.new_label
     accept o.conditions
+    pos(o)
     @g.giz alternate, o.conditions
     accept o.value
+    pos(o)
     @g.goto after
     alternate.set!
     accept o.else
@@ -711,21 +726,21 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
 
 
   def visit_EqualNode(o)
-    pos(o)
     accept o.left
     accept o.value
+    pos(o)
     @g.meta_send_op_equal @g.find_literal(:js_equal)
   end
   def visit_StrictEqualNode(o)
-    pos(o)
     accept o.left
     accept o.value
+    pos(o)
     @g.meta_send_op_equal @g.find_literal(:js_strict_equal)
   end
   def visit_NotEqualNode(o)
-    pos(o)
     accept o.left
     accept o.value
+    pos(o)
     @g.meta_send_op_equal @g.find_literal(:js_equal)
 
     alt = @g.new_label
@@ -739,9 +754,9 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     done.set!
   end
   def visit_NotStrictEqualNode(o)
-    pos(o)
     accept o.left
     accept o.value
+    pos(o)
     @g.meta_send_op_equal @g.find_literal(:js_strict_equal)
 
     alt = @g.new_label
@@ -756,22 +771,22 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
 
   def visit_BitwiseNotNode(o)
-    pos(o)
     accept o.value
+    pos(o)
     @g.send :~, 0
   end
 
   def visit_InstanceOfNode(o)
-    pos(o)
     accept o.left
     accept o.value
+    pos(o)
     @g.swap
     @g.send :js_instance_of, 1
   end
   def visit_InNode(o)
-    pos(o)
     accept o.left
     accept o.value
+    pos(o)
     @g.swap
     @g.send :js_in, 1
   end
@@ -783,20 +798,24 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     case callee
     when RKelly::Nodes::DotAccessorNode
       accept callee.value
+      pos(callee)
       @g.push_literal callee.accessor.to_sym
       args.each do |arg|
         accept arg
       end
+      pos(o)
       #@g.call_custom :js_invoke, args.size + 1
       @g.send :js_invoke, args.size + 1
 
     when RKelly::Nodes::BracketAccessorNode
       accept callee.value
       accept callee.accessor
+      pos(callee)
       @g.send :js_key, 0 unless key_safe?(o.accessor)
       args.each do |arg|
         accept arg
       end
+      pos(o)
       #@g.call_custom :js_invoke, args.size + 1
       @g.send :js_invoke, args.size + 1
 
@@ -805,48 +824,52 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
       # any arbitrary [hopefully function returning!] expression.
 
       accept callee
+      pos(callee)
       @g.push_nil
       args.each do |arg|
         accept arg
       end
+      pos(o)
       @g.send :js_call, args.size + 1
 
     end
   end
-  def assign_to(o)
-    pos(o)
-    case o
+  def visit_OpEqualNode(o)
+    case o.left
     when RKelly::Nodes::ResolveNode
-      if ref = @g.state.scope.search_local(o.value.to_sym)
+      if ref = @g.state.scope.search_local(o.left.value.to_sym)
+        accept o.value
+        pos(o.left)
         ref.set_bytecode(@g)
       else
+        pos(o.left)
         @g.push_const :Capuchin
         @g.find_const :Globals
-        @g.swap
-        @g.push_literal o.value.to_sym
-        @g.swap
+        @g.push_literal o.left.value.to_sym
+        accept o.value
+        pos(o)
         @g.send :[]=, 2
       end
     when RKelly::Nodes::DotAccessorNode
+      accept o.left.value
+      pos(o.left.accessor)
+      @g.push_literal o.left.accessor.to_sym
       accept o.value
-      @g.swap
-      @g.push_literal o.accessor.to_sym
-      @g.swap
+      pos(o)
       @g.send :js_set, 2
     when RKelly::Nodes::BracketAccessorNode
+      accept o.left.value
+      accept o.left.accessor
+      unless key_safe?(o.left.accessor)
+        pos(o.left.accessor)
+        @g.send :js_key, 0
+      end
       accept o.value
-      @g.swap
-      accept o.accessor
-      @g.send :js_key, 0 unless key_safe?(o.accessor)
-      @g.swap
+      pos(o)
       @g.send :js_set, 2
     else
-      raise NotImplementedError, "Don't know how to assign to #{o.class}"
+      raise NotImplementedError, "Don't know how to assign to #{o.left.class}"
     end
-  end
-  def visit_OpEqualNode(o)
-    accept o.value
-    assign_to o.left
   end
 end
 

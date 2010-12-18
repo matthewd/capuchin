@@ -51,6 +51,8 @@ class Capuchin::Context
       tree.accept(visitor)
     end
 
+    g.set_line 0
+
     g.push_nil
     g.ret
     g.close
