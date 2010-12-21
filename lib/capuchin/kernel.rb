@@ -234,6 +234,17 @@ class String
   js_def :indexOf do |needle|
     index(needle) || -1
   end
+  js_def :match do |needle|
+    Capuchin::RegExp === needle ? needle.exec(self) : index(needle) ? needle : nil
+  end
+  js_def :replace do |needle, replacement|
+    case needle
+    when Capuchin::RegExp
+      needle.replace(self, replacement)
+    else
+      sub(needle, replacement)
+    end
+  end
   def js_key; intern; end
   def js_truthy?; size > 0; end
   def js_typeof; 'string'; end
@@ -371,6 +382,59 @@ class Capuchin::Function
     @block
   end
 end
+class Capuchin::RegExp
+  def initialize(pattern, flag_str=nil)
+    @pattern = pattern
+
+    flags = (flag_str ||= '').split('')
+
+    @i = flags.include?('i')
+    @g = flags.include?('g')
+    @m = flags.include?('m')
+
+    @regexp = build_regexp
+
+    @last = 0
+  end
+  def build_regexp
+    # There are probably translations that need to be done here
+    pattern = @pattern
+
+    flags = 0
+    flags |= Regexp::IGNORECASE if @i
+    flags |= Regexp::MULTILINE if @m
+
+    Regexp.new(pattern, flags)
+  end
+  js_attr :source do @pattern end
+  js_attr :ignoreCase do @i end
+  js_attr :global do @g end
+  js_attr :multiline do @m end
+  js_attr :lastIndex do @last end
+  js_def :test do |str|
+    @regexp.match(str) ? true : false
+  end
+  def replace(haystack, replacement)
+    if @g
+      haystack.gsub(@regexp, replacement)
+    else
+      haystack.sub(@regexp, replacement)
+    end
+  end
+  def exec(str)
+    if m = @regexp.match(str)
+      @last = m.offset(0).last
+      m.to_a
+    else
+      @last = 0
+      nil
+    end
+  end
+  js_expose_method :exec
+  def js_call(str)
+    exec(str)
+  end
+end
 
 module Capuchin::DateMethods
   attr :t
@@ -384,6 +448,8 @@ Capuchin::Globals[:xulRunner] = {}
 Capuchin::Globals[:Array] = Array
 Capuchin::Globals[:String] = String
 Capuchin::Globals[:Object] = Capuchin::Obj
+Capuchin::Globals[:Function] = Capuchin::Function
+Capuchin::Globals[:RegExp] = Capuchin::RegExp
 Capuchin::Globals[:Date] = Capuchin::Function.new('Date', {}, Capuchin::DateMethods) {|| @t = Time.new }
 Capuchin::Globals[:print] = Capuchin::Function.new {|x| puts x }
 Capuchin::Globals[:p] = Capuchin::Function.new {|x| p [x, x.methods.grep(/^js:/)] }

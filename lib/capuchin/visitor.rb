@@ -285,17 +285,63 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     o.get_bytecode(self, @g)
   end
   def visit_RegexpNode(o)
-    # o.value
-    raise NotImplementedError, "regexp"
+    unless o.value =~ %r{^/(.*)/([a-z]*)$}
+      raise ArgumentError, "Unexpected RegexpNode format"
+    end
+
+    regexp_string = $1
+    flags = $2
+
+
+    slot = @g.add_literal(nil)
+    done = @g.new_label
+
+    @g.push_literal_at(slot)
+    @g.dup
+    @g.git done
+    @g.pop
+
+    @g.push_const :Capuchin
+    @g.find_const :Globals
+    @g.push_literal :RegExp
+    @g.send :[], 1
+    @g.push_literal regexp_string
+    if flags != ''
+      @g.push_literal flags
+      @g.send :js_new, 2
+    else
+      @g.send :js_new, 1
+    end
+    @g.set_literal slot
+
+    done.set!
+    @g.send :dup, 0
   end
   def visit_StringNode(o)
     pos(o)
     str = o.value[1, o.value.size - 2]
-    # FIXME: Escapes: \\, \", \n, \u..., \0..
-    str.gsub!(/\\([n'"\\])/) do
-      case $1
-      when 'n'; "\n"
-      else; $1
+    str.gsub!(/\\(?:([bfnrtv'"\\])|([0-3][0-7]{0,2}|[4-7][0-7]?)|x([A-Fa-f0-9]{2})|u([A-Fa-f0-9]{4}))/) do
+      if $1
+        case $1
+        when 'b'; "\b"
+        when 'f'; "\f"
+        when 'n'; "\n"
+        when 'r'; "\r"
+        when 't'; "\t"
+        when 'v'; "\v"
+        else; $1
+        end
+      elsif $2
+        $2.to_i(8).chr
+      elsif $3
+        $3.to_i(16).chr
+      else
+        codepoint = $4.to_i(16)
+        if codepoint > 255
+          raise NotImplementedError, "utf-16"
+        else
+          codepoint.chr
+        end
       end
     end
     @g.push_literal str
