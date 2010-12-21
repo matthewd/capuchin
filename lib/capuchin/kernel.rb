@@ -380,6 +380,7 @@ module Capuchin::DateMethods
 end
 
 Capuchin::Globals = Rubinius::LookupTable.new
+Capuchin::Globals[:xulRunner] = {}
 Capuchin::Globals[:Array] = Array
 Capuchin::Globals[:String] = String
 Capuchin::Globals[:Object] = Capuchin::Obj

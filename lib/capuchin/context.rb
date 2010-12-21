@@ -13,6 +13,12 @@ class Capuchin::Context
       end
     end
   end
+  def parse_expression(expression, filename=nil)
+    ast = @parser.parse(expression, filename)
+    raise "Parse of #{filename ? filename.inspect : 'expression'} failed :(" if ast.nil?
+    Rubinius::AST::AsciiGrapher.new(ast, RKelly::Nodes::Node).print if @debug
+    ast
+  end
   def parse(filename)
     ast = @parser.parse(File.read(filename), filename)
     raise "Parse of #{filename.inspect} failed :(" if ast.nil?

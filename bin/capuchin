@@ -13,13 +13,25 @@ cx = Capuchin::Context.new
 first_filename = nil
 parsed = []
 
+next_is_expr = false
 ARGV.each do |arg|
   # SunSpider compatibility
   next if arg == '-f'
 
-  first_filename ||= arg
-  parsed << cx.parse(arg)
+  if arg == '-e'
+    next_is_expr = true
+    next
+  end
+
+  if next_is_expr
+    parsed << cx.parse_expression(arg, '-e')
+  else
+    first_filename ||= arg
+    parsed << cx.parse(arg)
+  end
+
+  next_is_expr = false
 end
 
-cx.compile(parsed, first_filename).call
+cx.compile(parsed, first_filename || '?').call
 
