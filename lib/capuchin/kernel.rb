@@ -471,3 +471,11 @@ Capuchin::Globals[:run] = Capuchin::Globals[:load] = Capuchin::Function.new do |
   (done - start) * 1000
 end
 
+# This isn't a real solution; eval needs to be a compiler construct, so
+# it gets the containing scope's variables, etc.
+Capuchin::Globals[:eval] = Capuchin::Function.new do |src|
+  Capuchin::Context.new.eval(src)
+end
+
+Capuchin::Globals[:version] = Capuchin::Function.new {|x| }
+

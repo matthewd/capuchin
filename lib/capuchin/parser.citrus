@@ -1,0 +1,534 @@
+
+grammar Capuchin::Parser
+  rule source_file
+    SP? source_elements SP?
+  end
+
+  rule source_elements
+    source_element*
+  end
+
+  rule source_element
+    function_declaration | statement
+  end
+
+  rule statement
+    (block
+    |variable_statement
+    |const_statement
+    |empty_statement
+    |expr_statement
+    |if_statement
+    |iteration_statement
+    |continue_statement
+    |break_statement
+    |return_statement
+    |with_statement
+    |switch_statement
+    |labelled_statement
+    |throw_statement
+    |try_statement
+    )
+  end
+
+  rule literal
+    ('null'
+    |'true'
+    |'false'
+    |number
+    |string
+    |regexp
+    )
+  end
+
+  rule property
+    (ident SP? ':' SP? assignment_expr
+    |string SP? ':' SP? assignment_expr
+    |number SP? ':' SP? assignment_expr
+    |ident SP ident SP? '(' SP? formal_parameter_list? SP? ')' SP? '{' SP? function_body SP? '}'
+    )
+  end
+
+  rule property_list
+    (property SP? ',' SP?)* property
+  end
+
+  rule primary_expr
+    (primary_expr_no_brace
+    |'{' SP? (property_list SP? (',' SP?)?)? '}'
+    )
+  end
+
+  rule primary_expr_no_brace
+    ('this'
+    |literal
+    |array_literal
+    |ident
+    |'(' SP? expr SP? ')'
+    )
+  end
+
+  rule array_literal
+    '[' SP? element_list? SP? elision? SP? ']'
+  end
+
+  rule element_list
+    (elision SP?)? (assignment_expr SP? ',' SP? (elision SP?)?)* assignment_expr
+  end
+
+  rule elision
+    ',' (SP? ',')*
+  end
+
+  rule member_expr
+    (primary_expr
+    |function_expr
+    |'new' SP member_expr SP? arguments
+    )
+    (SP? '[' SP? expr SP? ']'
+    |SP? '.' SP? ident
+    )+
+  end
+
+  rule member_expr_no_bf
+    (primary_expr_no_brace
+    |'new' SP member_expr SP? arguments
+    )
+    (SP? '[' SP? expr SP? ']'
+    |SP? '.' SP? ident
+    )+
+  end
+
+  rule new_expr
+    ('new' SP new_expr
+    |member_expr
+    )
+  end
+
+  rule new_expr_no_bf
+    ('new' SP new_expr
+    |member_expr_no_bf
+    )
+  end
+
+  rule call_expr
+    member_expr SP? arguments
+    (SP? call_expr SP?
+      (arguments
+      |'[' SP? expr SP? ']'
+      |'.' SP? ident
+      )
+    )*
+  end
+
+  rule call_expr_no_bf
+    member_expr_no_bf SP? arguments
+    (SP? call_expr SP?
+      (arguments
+      |'[' SP? expr SP? ']'
+      |'.' SP? ident
+      )
+    )*
+  end
+
+  rule arguments
+    '(' SP? argument_list? SP? ')'
+  end
+
+  rule argument_list
+    assignment_expr (SP? ',' SP? assignment_expr)*
+  end
+
+  rule left_hand_side_expr
+    (new_expr
+    |call_expr
+    )
+  end
+
+  rule left_hand_side_expr_no_bf
+    (new_expr_no_bf
+    |call_expr_no_bf
+    )
+  end
+
+  rule postfix_expr
+    left_hand_side_expr (SP? '++' | SP? '--')?
+  end
+
+  rule postfix_expr_no_bf
+    left_hand_side_expr_no_bf (SP? '++' | SP? '--')?
+  end
+
+  rule unary_expr_common
+    ('delete' SP unary_expr
+    |'void' SP unary_expr
+    |'typeof' SP unary_expr
+    |'++' SP? unary_expr
+    |'--' SP? unary_expr
+    |'+' SP? unary_expr
+    |'-' SP? unary_expr
+    |'~' SP? unary_expr
+    |'!' SP? unary_expr
+    )
+  end
+
+  rule unary_expr
+    (unary_expr_common
+    |postfix_expr
+    )
+  end
+
+  rule unary_expr_no_bf
+    (unary_expr_common
+    |postfix_expr_no_bf
+    )
+  end
+
+  rule multiplicative_expr
+    unary_expr (SP? ('*' SP? unary_expr
+                    |'/' SP? unary_expr
+                    |'%' SP? unary_expr
+                    )
+               )*
+  end
+  rule multiplicative_expr_no_bf
+    unary_expr_no_bf (SP? ('*' SP? unary_expr
+                          |'/' SP? unary_expr
+                          |'%' SP? unary_expr
+                          )
+                     )*
+  end
+
+  rule additive_expr
+    multiplicative_expr (SP? ('+' SP? multiplicative_expr
+                             |'-' SP? multiplicative_expr
+                             )
+                        )*
+  end
+  rule additive_expr_no_bf
+    multiplicative_expr_no_bf (SP? ('+' SP? multiplicative_expr
+                                   |'-' SP? multiplicative_expr
+                                   )
+                              )*
+  end
+
+  rule shift_expr
+    additive_expr (SP? ('<<' SP? additive_expr
+                       |'>>' SP? additive_expr
+                       |'>>>' SP? additive_expr
+                       )
+                  )*
+  end
+  rule shift_expr_no_bf
+    additive_expr_no_bf (SP? ('<<' SP? additive_expr
+                             |'>>' SP? additive_expr
+                             |'>>>' SP? additive_expr
+                             )
+                        )*
+  end
+
+  rule relational_expr
+    shift_expr (SP? '<' SP? shift_expr
+               |SP? '>' SP? shift_expr
+               |SP? '<=' SP? shift_expr
+               |SP? '>=' SP? shift_expr
+               |SP 'instanceof' SP shift_expr
+               |SP 'in' SP shift_expr
+               )*
+  end
+  rule relational_expr_no_in
+    shift_expr_no_in (SP? '<' SP? shift_expr
+                     |SP? '>' SP? shift_expr
+                     |SP? '<=' SP? shift_expr
+                     |SP? '>=' SP? shift_expr
+                     |SP 'instanceof' SP shift_expr
+                     )*
+  end
+  rule relational_expr_no_bf
+    shift_expr_no_bf (SP? '<' SP? shift_expr
+                     |SP? '>' SP? shift_expr
+                     |SP? '<=' SP? shift_expr
+                     |SP? '>=' SP? shift_expr
+                     |SP 'instanceof' SP shift_expr
+                     |SP 'in' SP shift_expr
+                     )*
+  end
+
+  rule equality_expr
+    relational_expr (SP? ('==' SP? relational_expr
+                         |'!=' SP? relational_expr
+                         |'===' SP? relational_expr
+                         |'!==' SP? relational_expr
+                         )
+                    )*
+  end
+  rule equality_expr_no_in
+    relational_expr_no_in (SP? ('==' SP? relational_expr_no_in
+                               |'!=' SP? relational_expr_no_in
+                               |'===' SP? relational_expr_no_in
+                               |'!==' SP? relational_expr_no_in
+                               )
+                          )*
+  end
+  rule equality_expr_no_bf
+    relational_expr_no_bf (SP? ('==' SP? relational_expr
+                               |'!=' SP? relational_expr
+                               |'===' SP? relational_expr
+                               |'!==' SP? relational_expr
+                               )
+                          )*
+  end
+
+  rule bitwise_and_expr
+    equality_expr (SP? '&' SP? equality_expr)*
+  end
+  rule bitwise_and_expr_no_in
+    equality_expr_no_in (SP? '&' SP? equality_expr_no_in)*
+  end
+  rule bitwise_and_expr_no_bf
+    equality_expr_no_bf (SP? '&' SP? equality_expr)*
+  end
+
+  rule bitwise_xor_expr
+    bitwise_and_expr (SP? '^' SP? bitwise_and_expr)*
+  end
+  rule bitwise_xor_expr_no_in
+    bitwise_and_expr_no_in (SP? '^' SP? bitwise_and_expr_no_in)*
+  end
+  rule bitwise_xor_expr_no_bf
+    bitwise_and_expr_no_bf (SP? '^' SP? bitwise_and_expr)*
+  end
+
+  rule bitwise_or_expr
+    bitwise_xor_expr (SP? '|' SP? bitwise_xor_expr)*
+  end
+  rule bitwise_or_expr_no_in
+    bitwise_xor_expr_no_in (SP? '|' SP? bitwise_xor_expr_no_in)*
+  end
+  rule bitwise_or_expr_no_bf
+    bitwise_xor_expr_no_bf (SP? '|' SP? bitwise_xor_expr)*
+  end
+
+  rule logical_and_expr
+    bitwise_or_expr (SP? '&&' SP? bitwise_or_expr)*
+  end
+  rule logical_and_expr_no_in
+    bitwise_or_expr_no_in (SP? '&&' SP? bitwise_or_expr_no_in)*
+  end
+  rule logical_and_expr_no_bf
+    bitwise_or_expr_no_bf (SP? '&&' SP? bitwise_or_expr)*
+  end
+
+  rule logical_or_expr
+    logical_and_expr (SP? '||' SP? logical_and_expr)*
+  end
+  rule logical_or_expr_no_in
+    logical_and_expr_no_in (SP? '||' SP? logical_and_expr_no_in)*
+  end
+  rule logical_or_expr_no_bf
+    logical_and_expr_no_bf (SP? '||' SP? logical_and_expr)*
+  end
+
+  rule conditional_expr
+    logical_or_expr (SP? '?' SP? assignment_expr SP? ':' SP? assignment_expr)*
+  end
+  rule conditional_expr_no_in
+    logical_or_expr_no_in (SP? '?' SP? assignment_expr_no_in SP? ':' SP? assignment_expr_no_in)*
+  end
+  rule conditional_expr_no_bf
+    logical_or_expr_no_bf (SP? '?' SP? assignment_expr SP? ':' SP? assignment_expr)*
+  end
+
+  rule assignment_expr
+    (left_hand_side_expr SP? assignment_operator SP?)* conditional_expr
+  end
+  rule assignment_expr_no_in
+    (left_hand_side_expr SP? assignment_operator SP?)* conditional_expr_no_in
+  end
+  rule assignment_expr_no_bf
+    (left_hand_side_expr_no_bf SP? assignment_operator SP?)? assignment_expr
+  end
+
+  rule assignment_operator
+    ('='
+    |'+='
+    |'-='
+    |'*='
+    |'/='
+    |'<<='
+    |'>>='
+    |'>>>='
+    |'&='
+    |'^='
+    |'|='
+    |'%='
+    )
+  end
+
+  rule expr
+    assignment_expr (SP? ',' SP? assignment_expr)*
+  end
+  rule expr_no_in
+    assignment_expr_no_in (SP? ',' SP? assignment_expr_no_in)*
+  end
+  rule expr_no_bf
+    assignment_expr_no_bf (SP? ',' SP? assignment_expr)*
+  end
+
+  rule block
+    '{' SP? source_elements SP? '}'
+  end
+
+  rule variable_statement
+    'var' SP variable_declaration_list SP? (';' | error)
+  end
+
+  rule variable_declaration_list
+    variable_declaration (SP? ',' SP? variable_declaration)*
+  end
+  rule variable_declaration_list_no_in
+    variable_declaration_no_in (SP? ',' SP? variable_declaration_no_in)*
+  end
+
+  rule variable_declaration
+    ident (SP? '=' SP? assignment_expr)?
+  end
+  rule variable_declaration_no_in
+    ident (SP? '=' SP? assignment_expr_no_in)?
+  end
+
+  rule const_statement
+    'const' SP const_declaration_list SP? (';' | error)
+  end
+  rule const_declaration_list
+    (const_declaration SP? ',' SP?)* const_declaration
+  end
+  rule const_declaration
+    ident (SP? '=' SP? assignment_expr)?
+  end
+
+  rule empty_statement
+    ';'
+  end
+
+  rule expr_statement
+    expr_no_bf SP? (';' | error)
+  end
+
+  rule if_statement
+    'if' SP? '(' SP? expr SP? ')' SP? statement (SP? 'else' SP? statement)?
+  end
+
+  rule iteration_statement
+    ('do' SP? statement SP? 'while' SP? '(' SP? expr SP? ')' SP? (';' | error)
+    |'while' SP? '(' SP? expr SP? ')' SP? statement
+    |'for' SP? '(' SP? (expr_no_in SP?)? ';' SP? (expr SP?)? ';' SP? (expr SP?)? ')' SP? statement
+    |'for' SP? '(' SP? 'var' SP variable_declaration_list_no_in SP? ';' SP? (expr SP?)? ';' SP? (expr SP?)? ')' SP? statement
+    |'for' '(' left_hand_side_expr SP 'in' SP (expr SP?)? ')' SP? statement
+    |'for' '(' 'var' SP ident SP 'in' SP (expr SP?)? ')' SP? statement
+    |'for' '(' 'var' SP ident SP? '=' SP? assignment_expr_no_in SP 'in' SP (expr SP?)? ')' SP? statement
+    )
+  end
+
+  rule continue_statement
+    'continue' (SP ident)? SP? (';' | error)
+  end
+  rule break_statement
+    'break' (SP ident)? SP? (';' | error)
+  end
+  rule return_statement
+    'return' SP? (expr SP?) (';' | error)
+  end
+
+  rule with_statement
+    'with' SP? '(' SP? expr SP? ')' SP? statement
+  end
+
+  rule switch_statement
+    'switch' SP? '(' SP? expr SP? ')' SP? case_block
+  end
+
+  rule case_block
+    '{' SP? case_clause* (default_clause case_clause*)? '}'
+  end
+  rule case_clause
+    'case' SP? expr SP? ':' SP? source_elements SP?
+  end
+  rule case_clause
+    'default' SP? ':' SP? source_elements SP?
+  end
+
+  rule labelled_statement
+    ident SP? ':' SP? statement
+  end
+
+  rule throw_statement
+    'throw' SP? expr SP? (';' | error)
+  end
+
+  rule try_statement
+    'try' SP? block SP? ('finally' SP? block
+                        |'catch' SP? '(' SP? ident SP? ')' SP? block (SP? 'finally' SP? block)?
+                        )
+  end
+
+  rule function_declaration
+    'function' SP ident SP? '(' SP? (formal_parameter_list SP?)? ')' SP? '{' SP? function_body SP? '}'
+  end
+  rule function_expr
+    'function' (SP ident)? SP? '(' SP? (formal_parameter_list SP?)? ')' SP? '{' SP? function_body SP? '}'
+  end
+
+  rule formal_parameter_list
+    ident (SP? ',' SP? ident)*
+  end
+
+  rule function_body
+    source_elements
+  end
+
+
+  rule string
+    /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/m
+  end
+
+  rule number
+    float | integer
+  end
+  rule float
+    /\d+\.\d*(?:[eE][-+]?\d+)?|\d+(?:\.\d*)?[eE][-+]?\d+|\.\d+(?:[eE][-+]?\d+)?/
+  end
+  rule integer
+    /0[xX][\da-fA-F]+|0[0-7]*|\d+/
+  end
+
+  rule regexp
+    /\/([^\[\/\\]+|\\.|\[\^?\]?([^\]]+|\\.)*\])*\/[gim]*/
+  end
+
+  rule ident
+    /[A-Za-z_$][A-Za-z0-9_$]*/
+  end
+
+  rule error
+    /\s+\n/
+  end
+
+
+  rule BLANK
+    /[ \t]*(?:(?:'[^\n]+)?\n[ \t]*)+/ { nil }
+  end
+  rule EOL
+    (BLANK | EOF) { nil }
+  end
+  rule EOF
+    !.
+  end
+  rule comment
+    /'[^\n]+/ { nil }
+  end
+  rule SP
+    /\s+|\n+|\/\/.*|\/\*(.|\n|\r)*?\*\// { nil }
+  end
+end
+

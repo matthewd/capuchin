@@ -1,7 +1,7 @@
 module Capuchin
 end
 
-require "rkelly"
+require "capuchin/parser"
 require "capuchin/kernel"
 require "capuchin/generator"
 require "capuchin/nodes"

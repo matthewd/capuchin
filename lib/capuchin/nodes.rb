@@ -13,7 +13,8 @@
 # block[n] -- given the number of "internal" stack entries have been
 # added; these should be undisturbed when the block is finished.
 
-class RKelly::Nodes::Node
+module Capuchin::Nodes
+class Node
   def call_bytecode(v, g)
     v.pos(self)
     v.accept(self)
@@ -22,7 +23,7 @@ class RKelly::Nodes::Node
     g.send :js_call, arg_count + 1
   end
 end
-class RKelly::Nodes::DotAccessorNode
+class DotAccessorNode
   def get_bytecode(v, g)
     v.pos(self)
     v.accept self.value
@@ -54,14 +55,14 @@ class RKelly::Nodes::DotAccessorNode
     g.send :js_invoke, arg_count + 1
   end
 end
-class RKelly::Nodes::BracketAccessorNode
+class BracketAccessorNode
   def get_bytecode(v, g)
     v.pos(self)
     v.accept self.value
     v.accept self.accessor
-    unless key_safe?(o.left.accessor)
-      pos(o.left.accessor)
-      @g.send :js_key, 0
+    unless v.key_safe?(self.accessor)
+      v.pos(self.accessor)
+      g.send :js_key, 0
     end
     g.send :js_get, 1
   end
@@ -69,9 +70,9 @@ class RKelly::Nodes::BracketAccessorNode
     v.pos(self)
     v.accept self.value
     v.accept self.accessor
-    unless key_safe?(o.left.accessor)
-      pos(o.left.accessor)
-      @g.send :js_key, 0
+    unless v.key_safe?(self.accessor)
+      v.pos(self.accessor)
+      g.send :js_key, 0
     end
     yield 2
     g.send :js_set, 2
@@ -80,9 +81,9 @@ class RKelly::Nodes::BracketAccessorNode
     v.pos(self)
     v.accept self.value
     v.accept self.accessor
-    unless key_safe?(o.left.accessor)
-      pos(o.left.accessor)
-      @g.send :js_key, 0
+    unless v.key_safe?(self.accessor)
+      v.pos(self.accessor)
+      g.send :js_key, 0
     end
     g.dup_many 2
     g.send :js_get, 1
@@ -94,15 +95,15 @@ class RKelly::Nodes::BracketAccessorNode
     v.accept self.value
     v.pos(self)
     v.accept self.accessor
-    unless key_safe?(o.left.accessor)
-      pos(o.left.accessor)
-      @g.send :js_key, 0
+    unless v.key_safe?(self.accessor)
+      v.pos(self.accessor)
+      g.send :js_key, 0
     end
     arg_count = yield(2)
     g.send :js_invoke, arg_count + 1
   end
 end
-class RKelly::Nodes::ResolveNode
+class ResolveNode
   def get_bytecode(v, g)
     v.pos(self)
     if ref = g.state.scope.search_local(self.value.to_sym)
@@ -124,7 +125,7 @@ class RKelly::Nodes::ResolveNode
       g.find_const :Globals
       g.push_literal self.value.to_sym
       yield 2
-      g.send :[]=, 1
+      g.send :[]=, 2
     end
   end
   def get_and_set_bytecode(v, g)
@@ -140,8 +141,9 @@ class RKelly::Nodes::ResolveNode
       g.dup_many 2
       g.send :[], 1
       yield 2
-      g.send :[]=, 1
+      g.send :[]=, 2
     end
   end
+end
 end
 

@@ -1,6 +1,9 @@
 
-class Capuchin::Visitor < RKelly::Visitors::Visitor
-  class DeclScanner < RKelly::Visitors::Visitor
+class Capuchin::Visitor
+end
+
+class Capuchin::CompileVisitor < Capuchin::Visitor
+  class DeclScanner < Capuchin::Visitor
     def initialize(scope)
       @scope = scope
     end
@@ -279,7 +282,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
     o.get_bytecode(self, @g)
   end
   def key_safe?(o)
-    RKelly::Nodes::NumberNode === o && Fixnum === o.value
+    Capuchin::Nodes::NumberNode === o && Fixnum === o.value
   end
   def visit_BracketAccessorNode(o)
     o.get_bytecode(self, @g)
@@ -401,6 +404,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
   end
   def visit_NewExprNode(o)
     # see also: call_bytecode in nodes.rb
+    accept o.value
     args = o.arguments.value
     o.arguments.value.each do |arg|
       accept arg
@@ -501,7 +505,7 @@ class Capuchin::Visitor < RKelly::Visitors::Visitor
 
     if o.init
       accept o.init
-      unless RKelly::Nodes::VarStatementNode === o.init
+      unless Capuchin::Nodes::VarStatementNode === o.init
         pos(o.init)
         @g.pop
       end

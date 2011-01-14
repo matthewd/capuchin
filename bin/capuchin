@@ -18,6 +18,11 @@ ARGV.each do |arg|
   # SunSpider compatibility
   next if arg == '-f'
 
+  if arg == '-d'
+    cx.debug = true
+    next
+  end
+
   if arg == '-e'
     next_is_expr = true
     next
