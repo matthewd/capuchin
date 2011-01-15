@@ -3,21 +3,21 @@ class Capuchin::Generator < Rubinius::Generator
   # Nodes that are guaranteed to leave a VM true or false (or nil) on
   # the stack, meaning we don't need to do a full truthiness check.
   BoolSafeNodes = %w(
-    RKelly::Nodes::TrueNode
-    RKelly::Nodes::FalseNode
-    RKelly::Nodes::NullNode
-    RKelly::Nodes::LogicalNotNode
-    RKelly::Nodes::EqualNode
-    RKelly::Nodes::StrictEqualNode
-    RKelly::Nodes::NotEqualNode
-    RKelly::Nodes::NotStrictEqualNode
-    RKelly::Nodes::InstanceOfNode
-    RKelly::Nodes::InNode
-    RKelly::Nodes::GreaterNode
-    RKelly::Nodes::GreaterOrEqualNode
-    RKelly::Nodes::LessNode
-    RKelly::Nodes::LessOrEqualNode
-    RKelly::Nodes::VoidNode
+    Capuchin::Nodes::TrueNode
+    Capuchin::Nodes::FalseNode
+    Capuchin::Nodes::NullNode
+    Capuchin::Nodes::LogicalNotNode
+    Capuchin::Nodes::EqualNode
+    Capuchin::Nodes::StrictEqualNode
+    Capuchin::Nodes::NotEqualNode
+    Capuchin::Nodes::NotStrictEqualNode
+    Capuchin::Nodes::InstanceOfNode
+    Capuchin::Nodes::InNode
+    Capuchin::Nodes::GreaterNode
+    Capuchin::Nodes::GreaterOrEqualNode
+    Capuchin::Nodes::LessNode
+    Capuchin::Nodes::LessOrEqualNode
+    Capuchin::Nodes::VoidNode
   )
 
   def bool_safe?(o)
@@ -25,7 +25,7 @@ class Capuchin::Generator < Rubinius::Generator
       return true
     end
 
-    if RKelly::Nodes::LogicalAndNode === o || RKelly::Nodes::LogicalOrNode === o
+    if Capuchin::Nodes::LogicalAndNode === o || Capuchin::Nodes::LogicalOrNode === o
       bool_safe?(o.left) && bool_safe?(o.value)
     end
 

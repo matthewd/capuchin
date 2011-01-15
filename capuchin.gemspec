@@ -12,7 +12,7 @@ Gem::Specification.new do |s|
   s.summary     = %q{JavaScript on Rubinius}
   s.description = %q{A JavaScript implemention on the Rubinus VM.}
 
-  s.add_dependency "rkelly", "~> 1.0.1"
+  s.add_dependency "parslet", "~> 1.0"
 
   s.files         = `git ls-files`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
