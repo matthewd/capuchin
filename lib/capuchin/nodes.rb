@@ -15,6 +15,7 @@
 
 module Capuchin::Nodes
 class Node
+  include Capuchin::Visitable
   def call_bytecode(v, g)
     v.pos(self)
     v.accept(self)
@@ -22,7 +23,157 @@ class Node
     arg_count = yield(2)
     g.send :js_call, arg_count + 1
   end
+
+  def filename; end
+  def line; 1; end
 end
+class RootNode < Node
+  attr_accessor :value
+  def initialize(value)
+    @value = value
+  end
+end
+
+class NullNode < Node; end
+class TrueNode < Node; end
+class FalseNode < Node; end
+
+class LiteralNode < Node
+  attr_accessor :value
+  def initialize(value)
+    @value = value
+  end
+end
+class NumberNode < LiteralNode; end
+class StringNode < LiteralNode; end
+class RegexpNode < LiteralNode; end
+class ObjectLiteralNode < LiteralNode; end
+
+class FunctionDeclNode < Node
+  attr_accessor :value, :function_body, :arguments
+  def initialize(value, function_body, arguments)
+    @value, @function_body, @arguments = value, function_body, arguments
+  end
+end
+class FunctionExprNode < Node
+  attr_accessor :value, :function_body, :arguments
+  def initialize(value, function_body, arguments)
+    @value, @function_body, @arguments = value, function_body, arguments
+  end
+end
+class FunctionCallNode < Node
+  attr_accessor :value, :arguments
+  def initialize(value, arguments)
+    @value, @arguments = value, arguments
+  end
+end
+
+class ReturnNode < Node
+  attr_accessor :value
+  def initialize(value)
+    @value = value
+  end
+end
+class ExpressionStatementNode < Node
+  attr_accessor :value
+  def initialize(value)
+    @value = value
+  end
+end
+
+class UnaryNode < Node
+  attr_accessor :value
+  def initialize(value)
+    @value = value
+  end
+end
+class PrefixNode < UnaryNode
+  attr_accessor :operand
+  def initialize(value, operand)
+    super(value)
+    @operand = operand
+  end
+end
+class PostfixNode < UnaryNode
+  attr_accessor :operand
+  def initialize(value, operand)
+    super(value)
+    @operand = operand
+  end
+end
+class DeleteNode < UnaryNode; end
+class VoidNode < UnaryNode; end
+class TypeOfNode < UnaryNode; end
+class UnaryPlusNode < UnaryNode; end
+class UnaryMinusNode < UnaryNode; end
+class BitwiseNotNode < UnaryNode; end
+class LogicalNotNode < UnaryNode; end
+
+class BinaryNode < Node
+  attr_accessor :left, :value
+  def initialize(left, value)
+    @left, @value = left, value
+  end
+end
+class MultiplyNode < BinaryNode; end
+class DivideNode < BinaryNode; end
+class ModulusNode < BinaryNode; end
+class AddNode < BinaryNode; end
+class SubtractNode < BinaryNode; end
+class LeftShiftNode < BinaryNode; end
+class RightShiftNode < BinaryNode; end
+class UnsignedRightShiftNode < BinaryNode; end
+class LessNode < BinaryNode; end
+class GreaterNode < BinaryNode; end
+class LessOrEqualNode < BinaryNode; end
+class GreaterOrEqualNode < BinaryNode; end
+class InstanceOfNode < BinaryNode; end
+class InNode < BinaryNode; end
+class EqualNode < BinaryNode; end
+class NotEqualNode < BinaryNode; end
+class StrictEqualNode < BinaryNode; end
+class NotStrictEqualNode < BinaryNode; end
+class BitAndNode < BinaryNode; end
+class BitXOrNode < BinaryNode; end
+class BitOrNode < BinaryNode; end
+class LogicalAndNode < BinaryNode; end
+class LogicalOrNode < BinaryNode; end
+
+class OpEqualNode < BinaryNode; end
+class OpPlusEqualNode < BinaryNode; end
+class OpMinusEqualNode < BinaryNode; end
+class OpMultiplyEqualNode < BinaryNode; end
+class OpDivideEqualNode < BinaryNode; end
+class OpLShiftEqualNode < BinaryNode; end
+class OpRShiftEqualNode < BinaryNode; end
+class OpURShiftEqualNode < BinaryNode; end
+class OpAndEqualNode < BinaryNode; end
+class OpXOrEqualNode < BinaryNode; end
+class OpOrEqualNode < BinaryNode; end
+class OpModEqualNode < BinaryNode; end
+
+class CommaNode < BinaryNode; end
+
+class ConditionalNode < Node
+  attr_accessor :conditions, :value, :else
+  def initialize(conditions, value, else_)
+    @conditions, @value, @else = conditions, value, else_
+  end
+end
+
+class VarDeclNode < Node
+  attr_accessor :name, :value, :const
+  def initialize(name, value, const=false)
+    @name, @value, @const = name, value, const
+  end
+end
+class PropertyNode < Node
+  attr_accessor :name, :value
+  def initialize(name, value)
+    @name, @value = name, value
+  end
+end
+
 class DotAccessorNode
   def get_bytecode(v, g)
     v.pos(self)
@@ -103,7 +254,11 @@ class BracketAccessorNode
     g.send :js_invoke, arg_count + 1
   end
 end
-class ResolveNode
+class ResolveNode < Node
+  attr_accessor :value
+  def initialize(value)
+    @value = value
+  end
   def get_bytecode(v, g)
     v.pos(self)
     if ref = g.state.scope.search_local(self.value.to_sym)

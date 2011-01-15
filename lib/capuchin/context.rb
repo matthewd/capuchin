@@ -18,7 +18,8 @@ class Capuchin::Context
   def parse_expression(expression, filename=nil)
     ast = @parser.parse(expression)
     raise "Parse of #{filename ? filename.inspect : 'expression'} failed :(" if ast.nil?
-    Rubinius::AST::AsciiGrapher.new(ast, Capuchin::Nodes::Node).print if @debug
+    ast = Capuchin::ASTBuilder.new.apply(ast)
+    Rubinius::AST::AsciiGrapher.new(Capuchin::Nodes::RootNode.new(ast), Capuchin::Nodes::Node).print if @debug
     ast
   rescue Parslet::ParseFailed => error
     puts error, @parser.root.error_tree
@@ -27,7 +28,8 @@ class Capuchin::Context
   def parse(filename)
     ast = @parser.parse(File.read(filename))
     raise "Parse of #{filename.inspect} failed :(" if ast.nil?
-    Rubinius::AST::AsciiGrapher.new(ast, Capuchin::Nodes::Node).print if @debug
+    ast = Capuchin::ASTBuilder.new.apply(ast)
+    Rubinius::AST::AsciiGrapher.new(Capuchin::Nodes::RootNode.new(ast), Capuchin::Nodes::Node).print if @debug
     ast
   rescue Parslet::ParseFailed => error
     puts error, @parser.root.error_tree
@@ -44,7 +46,6 @@ class Capuchin::Context
     code.call
   end
   def compile(ast, filename)
-    p ast
     code = Object.new
 
     g = Capuchin::Generator.new
@@ -64,11 +65,11 @@ class Capuchin::Context
 
     trees = Array === ast ? ast : [ast]
     trees.each do |tree|
-      tree.accept(Capuchin::CompileVisitor::DeclScanner.new(scope))
+      Capuchin::CompileVisitor::DeclScanner.new(scope).accept(tree)
     end
     scope.append_buffered_definitions g, visitor
     trees.each do |tree|
-      tree.accept(visitor)
+      visitor.accept(tree)
     end
 
     g.set_line 0

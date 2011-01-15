@@ -1,6 +1,116 @@
 require 'parslet'
 
 module Capuchin; end
+
+class Capuchin::ASTBuilder < Parslet::Transform
+  rule(:left => subtree(:left), :ops => "") { left }
+  rule(:right => subtree(:right), :ops => "") { right }
+  rule(:cond => subtree(:cond), :ops => "") { cond }
+  rule(:expr => subtree(:expr), :postfix_op => nil) { expr }
+
+  rule(:integer => simple(:x)) { Integer(x) }
+  rule(:float => simple(:x)) { Float(x) }
+
+  rule(:literal => 'null') { Capuchin::Nodes::NullNode.new }
+  rule(:literal => 'true') { Capuchin::Nodes::TrueNode.new }
+  rule(:literal => 'false') { Capuchin::Nodes::FalseNode.new }
+  rule(:literal => { :string => simple(:x) }) { Capuchin::Nodes::StringNode.new(x) }
+  rule(:literal => { :regexp => simple(:x) }) { Capuchin::Nodes::RegexpNode.new(x) }
+  rule(:literal => simple(:num)) { Capuchin::Nodes::NumberNode.new(num) }
+
+  rule(:this => 'this') { Capuchin::Nodes::ThisNode.new }
+  rule(:ident => simple(:x)) { x }
+  rule(:resolve => simple(:x)) { Capuchin::Nodes::ResolveNode.new(x) }
+
+  rule(:name => simple(:name), :value => simple(:value)) { Capuchin::Nodes::PropertyNode.new(name, value) }
+  rule(:object_literal => sequence(:properties)) { Capuchin::Nodes::ObjectLiteralNode.new(properties) }
+
+  rule(:expr => simple(:value), :postfix_op => { :postfix => simple(:op) }) { Capuchin::Nodes::PostfixNode.new(value, op) }
+
+  rule(:unary => 'delete', :expr => simple(:value)) { Capuchin::Nodes::DeleteNode.new(value) }
+  rule(:unary => 'void', :expr => simple(:value)) { Capuchin::Nodes::VoidNode.new(value) }
+  rule(:unary => 'typeof', :expr => simple(:value)) { Capuchin::Nodes::TypeOfNode.new(value) }
+  rule(:unary => '++', :expr => simple(:value)) { Capuchin::Nodes::PrefixNode.new(value, '++') }
+  rule(:unary => '--', :expr => simple(:value)) { Capuchin::Nodes::PrefixNode.new(value, '--') }
+
+  rule(:unary => '+', :expr => simple(:value)) { Capuchin::Nodes::UnaryPlusNode.new(value) }
+  rule(:unary => '-', :expr => simple(:value)) { Capuchin::Nodes::UnaryMinusNode.new(value) }
+  rule(:unary => '~', :expr => simple(:value)) { Capuchin::Nodes::BitwiseNotNode.new(value) }
+  rule(:unary => '!', :expr => simple(:value)) { Capuchin::Nodes::LogicalNotNode.new(value) }
+
+  rule(:single_op => subtree(:op)) { [op] }
+  rule(:left => simple(:left), :ops => sequence(:ops)) do
+    x = left
+    until ops.empty?
+      ops.first.left = x
+      x = ops.shift
+    end
+    x
+  end
+  rule(:right => simple(:right), :ops => sequence(:ops)) do
+    x = right
+    until ops.empty?
+      ops.last.value = x
+      x = ops.pop
+    end
+    x
+  end
+  rule(:binary => '*', :right => simple(:right)) { Capuchin::Nodes::MultiplyNode.new(nil, right) }
+  rule(:binary => '/', :right => simple(:right)) { Capuchin::Nodes::DivideNode.new(nil, right) }
+  rule(:binary => '%', :right => simple(:right)) { Capuchin::Nodes::ModulusNode.new(nil, right) }
+  rule(:binary => '+', :right => simple(:right)) { Capuchin::Nodes::AddNode.new(nil, right) }
+  rule(:binary => '-', :right => simple(:right)) { Capuchin::Nodes::SubtractNode.new(nil, right) }
+  rule(:binary => '<<', :right => simple(:right)) { Capuchin::Nodes::LeftShiftNode.new(nil, right) }
+  rule(:binary => '>>', :right => simple(:right)) { Capuchin::Nodes::RightShiftNode.new(nil, right) }
+  rule(:binary => '>>>', :right => simple(:right)) { Capuchin::Nodes::UnsignedRightShiftNode.new(nil, right) }
+  rule(:binary => '<', :right => simple(:right)) { Capuchin::Nodes::LessNode.new(nil, right) }
+  rule(:binary => '>', :right => simple(:right)) { Capuchin::Nodes::GreaterNode.new(nil, right) }
+  rule(:binary => '<=', :right => simple(:right)) { Capuchin::Nodes::LessOrEqualNode.new(nil, right) }
+  rule(:binary => '>=', :right => simple(:right)) { Capuchin::Nodes::GreaterOrEqualNode.new(nil, right) }
+  rule(:binary => 'instanceof', :right => simple(:right)) { Capuchin::Nodes::InstanceOfNode.new(nil, right) }
+  rule(:binary => 'in', :right => simple(:right)) { Capuchin::Nodes::InNode.new(nil, right) }
+  rule(:binary => '==', :right => simple(:right)) { Capuchin::Nodes::EqualNode.new(nil, right) }
+  rule(:binary => '!=', :right => simple(:right)) { Capuchin::Nodes::NotEqualNode.new(nil, right) }
+  rule(:binary => '===', :right => simple(:right)) { Capuchin::Nodes::StrictEqualNode.new(nil, right) }
+  rule(:binary => '!==', :right => simple(:right)) { Capuchin::Nodes::NotStrictEqualNode.new(nil, right) }
+  rule(:binary => '&', :right => simple(:right)) { Capuchin::Nodes::BitAndNode.new(nil, right) }
+  rule(:binary => '^', :right => simple(:right)) { Capuchin::Nodes::BitXOrNode.new(nil, right) }
+  rule(:binary => '|', :right => simple(:right)) { Capuchin::Nodes::BitOrNode.new(nil, right) }
+  rule(:binary => '&&', :right => simple(:right)) { Capuchin::Nodes::LogicalAndNode.new(nil, right) }
+  rule(:binary => '||', :right => simple(:right)) { Capuchin::Nodes::LogicalOrNode.new(nil, right) }
+
+  rule(:assignment => '=', :left => simple(:left)) { Capuchin::Nodes::OpEqualNode.new(left, nil) }
+  rule(:assignment => '+=', :left => simple(:left)) { Capuchin::Nodes::OpPlusEqualNode.new(left, nil) }
+  rule(:assignment => '-=', :left => simple(:left)) { Capuchin::Nodes::OpMinusEqualNode.new(left, nil) }
+  rule(:assignment => '*=', :left => simple(:left)) { Capuchin::Nodes::OpMultiplyEqualNode.new(left, nil) }
+  rule(:assignment => '/=', :left => simple(:left)) { Capuchin::Nodes::OpDivideEqualNode.new(left, nil) }
+  rule(:assignment => '<<=', :left => simple(:left)) { Capuchin::Nodes::OpLShiftEqualNode.new(left, nil) }
+  rule(:assignment => '>>=', :left => simple(:left)) { Capuchin::Nodes::OpRShiftEqualNode.new(left, nil) }
+  rule(:assignment => '>>>=', :left => simple(:left)) { Capuchin::Nodes::OpURShiftEqualNode.new(left, nil) }
+  rule(:assignment => '&=', :left => simple(:left)) { Capuchin::Nodes::OpAndEqualNode.new(left, nil) }
+  rule(:assignment => '^=', :left => simple(:left)) { Capuchin::Nodes::OpXOrEqualNode.new(left, nil) }
+  rule(:assignment => '|=', :left => simple(:left)) { Capuchin::Nodes::OpOrEqualNode.new(left, nil) }
+  rule(:assignment => '%=', :left => simple(:left)) { Capuchin::Nodes::OpModEqualNode.new(left, nil) }
+
+  rule(:binary => ',', :right => simple(:right)) { Capuchin::Nodes::CommaNode.new(nil, right) }
+
+  rule(:var => simple(:var), :init => simple(:init)) { Capuchin::Nodes::VarDeclNode.new(var, init) }
+
+  rule(:expr_statement => simple(:expr)) { Capuchin::Nodes::ExpressionStatementNode.new(expr) }
+  rule(:statement => simple(:statement)) { statement }
+
+  rule(:function_expr => { :name => simple(:name), :args => sequence(:args), :body => sequence(:body) }) { Capuchin::Nodes::FunctionExprNode.new(name || 'function', body, args) }
+  rule(:function_expr => { :name => simple(:name), :args => simple(:arg), :body => sequence(:body) }) { Capuchin::Nodes::FunctionExprNode.new(name || 'function', body, arg ? [arg] : []) }
+
+  rule(:function_declaration => { :name => simple(:name), :args => sequence(:args), :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, args) }
+  rule(:function_declaration => { :name => simple(:name), :args => simple(:arg), :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, arg ? [arg] : []) }
+
+  rule(:expr => simple(:expr), :args => simple(:arg)) { Capuchin::Nodes::FunctionCallNode.new(expr, arg ? [arg] : []) }
+  rule(:expr => simple(:expr), :args => sequence(:args)) { Capuchin::Nodes::FunctionCallNode.new(expr, args) }
+
+  rule(:return => simple(:value)) { Capuchin::Nodes::ReturnNode.new(value) }
+end
+
 class Capuchin::Parser < Parslet::Parser
   alias_method :`, :str
 
@@ -13,7 +123,7 @@ class Capuchin::Parser < Parslet::Parser
     source_element.repeat
   end
   rule(:source_element) do
-    sp? >> function_declaration | sp? >> statement
+    sp? >> function_declaration.as(:function_declaration) | sp? >> statement.as(:statement)
   end
   rule(:statement) do
     block |
@@ -36,86 +146,86 @@ class Capuchin::Parser < Parslet::Parser
     `null` | `true` | `false` | number | string | regexp
   end
   rule(:property) do
-    (ident | string | number) >> sp? >> `:` >> sp? >> assignment_expr |
-    ident >> sp >> ident >> sp? >> `(` >> formal_parameter_list.maybe >> sp? >> `)` >> sp? >> `{` >> sp? >> function_body >> sp? >> `}`
+    (ident | string | number).as(:name) >> sp? >> `:` >> sp? >> assignment_expr.as(:value) |
+    ident.as(:name) >> sp >> ident.as(:prop_type) >> sp? >> `(` >> formal_parameter_list.maybe.as(:args) >> sp? >> `)` >> sp? >> `{` >> sp? >> function_body.as(:value) >> sp? >> `}`
   end
   rule(:property_list) do
     (property >> sp? >> `,` >> sp?).repeat >> property
   end
   rule(:primary_expr) do
     primary_expr_no_brace |
-    `{` >> sp? >> (property_list >> sp? >> (`,` >> sp?).maybe).maybe >> `}`
+    `{` >> sp? >> (property_list.as(:object_literal) >> sp? >> (`,` >> sp?).maybe).maybe >> `}`
   end
 
   rule(:primary_expr_no_brace) do
-    `this` |
-    literal |
-    array_literal |
-    ident |
+    `this`.as(:this) |
+    literal.as(:literal) |
+    array_literal.as(:array) |
+    ident.as(:resolve) |
     `(` >> sp? >> expr >> sp? >> `)`
   end
 
   rule(:array_literal) do
-    `[` >> sp? >> element_list.maybe >> sp? >> elision.maybe >> sp? >> `]`
+    `[` >> sp? >> element_list.maybe.as(:elements) >> sp? >> elision.maybe >> sp? >> `]`
   end
 
   rule(:element_list) do
-    (elision >> sp?).maybe >> (assignment_expr >> sp? >> `,` >> sp? >> (elision >> sp?).maybe).repeat >> assignment_expr
+    (elision >> sp?).maybe >> (assignment_expr.as(:element) >> sp? >> `,` >> sp? >> (elision >> sp?).maybe).repeat >> assignment_expr.as(:element)
   end
 
   rule(:elision) do
-    `,` >> (sp? >> `,`).repeat
+    `,`.as(:skip) >> (sp? >> `,`.as(:skip)).repeat
   end
 
   rule(:member_expr) do
     (
       primary_expr |
-      function_expr |
-      `new` >> sp >> member_expr >> sp? >> arguments
+      function_expr.as(:function_expr) |
+      `new`.as(:new) >> sp >> member_expr.as(:expr) >> sp? >> arguments.as(:args)
     ) >> (
-      sp? >> `[` >> sp? >> expr >> sp? >> `]` |
+      sp? >> `[` >> sp? >> expr.as(:expr) >> sp? >> `]` |
       sp? >> `.` >> sp? >> ident
-    ).repeat
+    ).as(:member).repeat
   end
 
   rule(:member_expr_no_bf) do
     (
       primary_expr_no_brace |
-      `new` >> sp >> member_expr >> sp? >> arguments
+      `new`.as(:new) >> sp >> member_expr.as(:expr) >> sp? >> arguments.as(:args)
     ) >> (
-      sp? >> `[` >> sp? >> expr >> sp? >> `]` |
+      sp? >> `[` >> sp? >> expr.as(:expr) >> sp? >> `]` |
       sp? >> `.` >> sp? >> ident
-    ).repeat
+    ).as(:member).repeat
   end
 
   rule(:new_expr) do
-    `new` >> sp >> new_expr |
+    `new`.as(:new) >> sp >> new_expr.as(:expr) |
     member_expr
   end
 
   rule(:new_expr_no_bf) do
-    `new` >> sp >> new_expr |
+    `new`.as(:new) >> sp >> new_expr.as(:expr) |
     member_expr_no_bf
   end
 
   rule(:call_expr) do
-    member_expr >> sp? >> arguments >>
-    (sp? >> call_expr >> sp? >>
-      (arguments |
-      `[` >> sp? >> expr >> sp? >> `]` |
+    member_expr.as(:expr) >> sp? >> arguments.as(:args) >>
+    (sp? >>
+      (arguments.as(:args) |
+      `[` >> sp? >> expr.as(:expr) >> sp? >> `]` |
       `.` >> sp? >> ident
       )
-    ).repeat
+    ).repeat.as(:calls)
   end
 
   rule(:call_expr_no_bf) do
-    member_expr_no_bf >> sp? >> arguments >>
-    (sp? >> call_expr >> sp? >>
-      (arguments |
-      `[` >> sp? >> expr >> sp? >> `]` |
+    member_expr_no_bf.as(:expr) >> sp? >> arguments.as(:args) >>
+    (sp? >>
+      (arguments.as(:args) |
+      `[` >> sp? >> expr.as(:expr) >> sp? >> `]` |
       `.` >> sp? >> ident
       )
-    ).repeat
+    ).repeat.as(:calls)
   end
 
   rule(:arguments) do
@@ -137,23 +247,15 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:postfix_expr) do
-    left_hand_side_expr >> (sp? >> `++` | sp? >> `--`).maybe
+    left_hand_side_expr.as(:expr) >> (sp? >> `++`.as(:postfix) | sp? >> `--`.as(:postfix)).maybe.as(:postfix_op)
   end
 
   rule(:postfix_expr_no_bf) do
-    left_hand_side_expr_no_bf >> (sp? >> `++` | sp? >> `--`).maybe
+    left_hand_side_expr_no_bf.as(:expr) >> (sp? >> `++`.as(:postfix) | sp? >> `--`.as(:postfix)).maybe.as(:postfix_op)
   end
 
   rule(:unary_expr_common) do
-    `delete` >> sp >> unary_expr |
-    `void` >> sp >> unary_expr |
-    `typeof` >> sp >> unary_expr |
-    `++` >> sp? >> unary_expr |
-    `--` >> sp? >> unary_expr |
-    `+` >> sp? >> unary_expr |
-    `-` >> sp? >> unary_expr |
-    `~` >> sp? >> unary_expr |
-    `!` >> sp? >> unary_expr
+    (`delete` | `void` | `typeof` | `++` | `--` | `+` | `-` | `~` | `!`).as(:unary) >> sp? >> unary_expr.as(:expr)
   end
 
   rule(:unary_expr) do
@@ -167,168 +269,114 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:multiplicative_expr) do
-    unary_expr >> (sp? >> (`*` >> sp? >> unary_expr |
-                    `/` >> sp? >> unary_expr |
-                    `%` >> sp? >> unary_expr
-                    )
-               ).repeat
+    unary_expr.as(:left) >> (sp? >> (`*` | `/` | `%`).as(:binary) >> sp? >> unary_expr.as(:right)).repeat.as(:ops)
   end
   rule(:multiplicative_expr_no_bf) do
-    unary_expr_no_bf >> (sp? >> (`*` >> sp? >> unary_expr |
-                          `/` >> sp? >> unary_expr |
-                          `%` >> sp? >> unary_expr
-                          )
-                     ).repeat
+    unary_expr_no_bf.as(:left) >> (sp? >> (`*` | `/` | `%`).as(:binary) >> sp? >> unary_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:additive_expr) do
-    multiplicative_expr >> (sp? >> (`+` >> sp? >> multiplicative_expr |
-                             `-` >> sp? >> multiplicative_expr
-                             )
-                        ).repeat
+    multiplicative_expr.as(:left) >> (sp? >> (`+` | `-`).as(:binary) >> sp? >> multiplicative_expr.as(:right)).repeat.as(:ops)
   end
   rule(:additive_expr_no_bf) do
-    multiplicative_expr_no_bf >> (sp? >> (`+` >> sp? >> multiplicative_expr |
-                                   `-` >> sp? >> multiplicative_expr
-                                   )
-                              ).repeat
+    multiplicative_expr_no_bf.as(:left) >> (sp? >> (`+` | `-`).as(:binary) >> sp? >> multiplicative_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:shift_expr) do
-    additive_expr >> (sp? >> (`<<` >> sp? >> additive_expr |
-                       `>>` >> sp? >> additive_expr |
-                       `>>>` >> sp? >> additive_expr
-                       )
-                  ).repeat
+    additive_expr.as(:left) >> (sp? >> (`<<` | `>>>` | `>>`).as(:binary) >> sp? >> additive_expr.as(:right)).repeat.as(:ops)
   end
   rule(:shift_expr_no_bf) do
-    additive_expr_no_bf >> (sp? >> (`<<` >> sp? >> additive_expr |
-                             `>>` >> sp? >> additive_expr |
-                             `>>>` >> sp? >> additive_expr
-                             )
-                        ).repeat
+    additive_expr_no_bf.as(:left) >> (sp? >> (`<<` | `>>>` | `>>`).as(:binary) >> sp? >> additive_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:relational_expr) do
-    shift_expr >> (sp? >> `<` >> sp? >> shift_expr |
-               sp? >> `>` >> sp? >> shift_expr |
-               sp? >> `<=` >> sp? >> shift_expr |
-               sp? >> `>=` >> sp? >> shift_expr |
-               sp >> `instanceof` >> sp >> shift_expr |
-               sp >> `in` >> sp >> shift_expr
-               ).repeat
+    shift_expr.as(:left) >> (sp? >> (`<=` | `<` | `>=` | `>` | `instanceof` | `in`).as(:binary) >> sp? >> shift_expr.as(:right)).repeat.as(:ops)
   end
   rule(:relational_expr_no_in) do
-    shift_expr_no_in >> (sp? >> `<` >> sp? >> shift_expr |
-                     sp? >> `>` >> sp? >> shift_expr |
-                     sp? >> `<=` >> sp? >> shift_expr |
-                     sp? >> `>=` >> sp? >> shift_expr |
-                     sp >> `instanceof` >> sp >> shift_expr
-                     ).repeat
+    shift_expr.as(:left) >> (sp? >> (`<=` | `<` | `>=` | `>` | `instanceof`).as(:binary) >> sp? >> shift_expr.as(:right)).repeat.as(:ops)
   end
   rule(:relational_expr_no_bf) do
-    shift_expr_no_bf >> (sp? >> `<` >> sp? >> shift_expr |
-                     sp? >> `>` >> sp? >> shift_expr |
-                     sp? >> `<=` >> sp? >> shift_expr |
-                     sp? >> `>=` >> sp? >> shift_expr |
-                     sp >> `instanceof` >> sp >> shift_expr |
-                     sp >> `in` >> sp >> shift_expr
-                     ).repeat
+    shift_expr_no_bf.as(:left) >> (sp? >> (`<=` | `<` | `>=` | `>` | `instanceof` | `in`).as(:binary) >> sp? >> shift_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:equality_expr) do
-    relational_expr >> (sp? >> (`==` >> sp? >> relational_expr |
-                         `!=` >> sp? >> relational_expr |
-                         `===` >> sp? >> relational_expr |
-                         `!==` >> sp? >> relational_expr
-                         )
-                    ).repeat
+    relational_expr.as(:left) >> (sp? >> (`===` | `==` | `!==` | `!=`).as(:binary) >> sp? >> relational_expr.as(:right)).repeat.as(:ops)
   end
   rule(:equality_expr_no_in) do
-    relational_expr_no_in >> (sp? >> (`==` >> sp? >> relational_expr_no_in |
-                               `!=` >> sp? >> relational_expr_no_in |
-                               `===` >> sp? >> relational_expr_no_in |
-                               `!==` >> sp? >> relational_expr_no_in
-                               )
-                          ).repeat
+    relational_expr_no_in.as(:left) >> (sp? >> (`===` | `==` | `!==` | `!=`).as(:binary) >> sp? >> relational_expr_no_in.as(:right)).repeat.as(:ops)
   end
   rule(:equality_expr_no_bf) do
-    relational_expr_no_bf >> (sp? >> (`==` >> sp? >> relational_expr |
-                               `!=` >> sp? >> relational_expr |
-                               `===` >> sp? >> relational_expr |
-                               `!==` >> sp? >> relational_expr
-                               )
-                          ).repeat
+    relational_expr_no_bf.as(:left) >> (sp? >> (`===` | `==` | `!==` | `!=`).as(:binary) >> sp? >> relational_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:bitwise_and_expr) do
-    equality_expr >> (sp? >> `&` >> sp? >> equality_expr).repeat
+    equality_expr.as(:left) >> (sp? >> `&`.as(:binary) >> sp? >> equality_expr.as(:right)).repeat.as(:ops)
   end
   rule(:bitwise_and_expr_no_in) do
-    equality_expr_no_in >> (sp? >> `&` >> sp? >> equality_expr_no_in).repeat
+    equality_expr_no_in.as(:left) >> (sp? >> `&`.as(:binary) >> sp? >> equality_expr_no_in.as(:right)).repeat.as(:ops)
   end
   rule(:bitwise_and_expr_no_bf) do
-    equality_expr_no_bf >> (sp? >> `&` >> sp? >> equality_expr).repeat
+    equality_expr_no_bf.as(:left) >> (sp? >> `&`.as(:binary) >> sp? >> equality_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:bitwise_xor_expr) do
-    bitwise_and_expr >> (sp? >> `^` >> sp? >> bitwise_and_expr).repeat
+    bitwise_and_expr.as(:left) >> (sp? >> `^`.as(:binary) >> sp? >> bitwise_and_expr.as(:right)).repeat.as(:ops)
   end
   rule(:bitwise_xor_expr_no_in) do
-    bitwise_and_expr_no_in >> (sp? >> `^` >> sp? >> bitwise_and_expr_no_in).repeat
+    bitwise_and_expr_no_in.as(:left) >> (sp? >> `^`.as(:binary) >> sp? >> bitwise_and_expr_no_in.as(:right)).repeat.as(:ops)
   end
   rule(:bitwise_xor_expr_no_bf) do
-    bitwise_and_expr_no_bf >> (sp? >> `^` >> sp? >> bitwise_and_expr).repeat
+    bitwise_and_expr_no_bf.as(:left) >> (sp? >> `^`.as(:binary) >> sp? >> bitwise_and_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:bitwise_or_expr) do
-    bitwise_xor_expr >> (sp? >> `|` >> sp? >> bitwise_xor_expr).repeat
+    bitwise_xor_expr.as(:left) >> (sp? >> `|`.as(:binary) >> sp? >> bitwise_xor_expr.as(:right)).repeat.as(:ops)
   end
   rule(:bitwise_or_expr_no_in) do
-    bitwise_xor_expr_no_in >> (sp? >> `|` >> sp? >> bitwise_xor_expr_no_in).repeat
+    bitwise_xor_expr_no_in.as(:left) >> (sp? >> `|`.as(:binary) >> sp? >> bitwise_xor_expr_no_in.as(:right)).repeat.as(:ops)
   end
   rule(:bitwise_or_expr_no_bf) do
-    bitwise_xor_expr_no_bf >> (sp? >> `|` >> sp? >> bitwise_xor_expr).repeat
+    bitwise_xor_expr_no_bf.as(:left) >> (sp? >> `|`.as(:binary) >> sp? >> bitwise_xor_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:logical_and_expr) do
-    bitwise_or_expr >> (sp? >> `&&` >> sp? >> bitwise_or_expr).repeat
+    bitwise_or_expr.as(:left) >> (sp? >> `&&`.as(:binary) >> sp? >> bitwise_or_expr.as(:right)).repeat.as(:ops)
   end
   rule(:logical_and_expr_no_in) do
-    bitwise_or_expr_no_in >> (sp? >> `&&` >> sp? >> bitwise_or_expr_no_in).repeat
+    bitwise_or_expr_no_in.as(:left) >> (sp? >> `&&`.as(:binary) >> sp? >> bitwise_or_expr_no_in.as(:right)).repeat.as(:ops)
   end
   rule(:logical_and_expr_no_bf) do
-    bitwise_or_expr_no_bf >> (sp? >> `&&` >> sp? >> bitwise_or_expr).repeat
+    bitwise_or_expr_no_bf.as(:left) >> (sp? >> `&&`.as(:binary) >> sp? >> bitwise_or_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:logical_or_expr) do
-    logical_and_expr >> (sp? >> `||` >> sp? >> logical_and_expr).repeat
+    logical_and_expr.as(:left) >> (sp? >> `||`.as(:binary) >> sp? >> logical_and_expr.as(:right)).repeat.as(:ops)
   end
   rule(:logical_or_expr_no_in) do
-    logical_and_expr_no_in >> (sp? >> `||` >> sp? >> logical_and_expr_no_in).repeat
+    logical_and_expr_no_in.as(:left) >> (sp? >> `||`.as(:binary) >> sp? >> logical_and_expr_no_in.as(:right)).repeat.as(:ops)
   end
   rule(:logical_or_expr_no_bf) do
-    logical_and_expr_no_bf >> (sp? >> `||` >> sp? >> logical_and_expr).repeat
+    logical_and_expr_no_bf.as(:left) >> (sp? >> `||`.as(:binary) >> sp? >> logical_and_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:conditional_expr) do
-    logical_or_expr >> (sp? >> `?` >> sp? >> assignment_expr >> sp? >> `:` >> sp? >> assignment_expr).repeat
+    logical_or_expr.as(:cond) >> (sp? >> `?` >> sp? >> assignment_expr.as(:true_expr) >> sp? >> `:` >> sp? >> assignment_expr.as(:false_expr)).repeat.as(:ops)
   end
   rule(:conditional_expr_no_in) do
-    logical_or_expr_no_in >> (sp? >> `?` >> sp? >> assignment_expr_no_in >> sp? >> `:` >> sp? >> assignment_expr_no_in).repeat
+    logical_or_expr_no_in.as(:cond) >> (sp? >> `?` >> sp? >> assignment_expr_no_in.as(:true_expr) >> sp? >> `:` >> sp? >> assignment_expr_no_in.as(:false_expr)).repeat.as(:ops)
   end
   rule(:conditional_expr_no_bf) do
-    logical_or_expr_no_bf >> (sp? >> `?` >> sp? >> assignment_expr >> sp? >> `:` >> sp? >> assignment_expr).repeat
+    logical_or_expr_no_bf.as(:cond) >> (sp? >> `?` >> sp? >> assignment_expr.as(:true_expr) >> sp? >> `:` >> sp? >> assignment_expr.as(:false_expr)).repeat.as(:ops)
   end
 
   rule(:assignment_expr) do
-    (left_hand_side_expr >> sp? >> assignment_operator >> sp?).repeat >> conditional_expr
+    (left_hand_side_expr.as(:left) >> sp? >> assignment_operator.as(:assignment) >> sp?).repeat.as(:ops) >> conditional_expr.as(:right)
   end
   rule(:assignment_expr_no_in) do
-    (left_hand_side_expr >> sp? >> assignment_operator >> sp?).repeat >> conditional_expr_no_in
+    (left_hand_side_expr.as(:left) >> sp? >> assignment_operator.as(:assignment) >> sp?).repeat.as(:ops) >> conditional_expr_no_in.as(:right)
   end
   rule(:assignment_expr_no_bf) do
-    (left_hand_side_expr_no_bf >> sp? >> assignment_operator >> sp?).maybe >> assignment_expr
+    (left_hand_side_expr_no_bf.as(:left) >> sp? >> assignment_operator.as(:assignment) >> sp?).repeat(0, 1).as(:ops) >> assignment_expr.as(:right)
   end
 
   rule(:assignment_operator) do
@@ -347,17 +395,17 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:expr) do
-    assignment_expr >> (sp? >> `,` >> sp? >> assignment_expr).repeat
+    assignment_expr.as(:left) >> (sp? >> `,`.as(:binary) >> sp? >> assignment_expr.as(:right)).repeat.as(:ops)
   end
   rule(:expr_no_in) do
-    assignment_expr_no_in >> (sp? >> `,` >> sp? >> assignment_expr_no_in).repeat
+    assignment_expr_no_in.as(:left) >> (sp? >> `,`.as(:binary) >> sp? >> assignment_expr_no_in.as(:right)).repeat.as(:ops)
   end
   rule(:expr_no_bf) do
-    assignment_expr_no_bf >> (sp? >> `,` >> sp? >> assignment_expr).repeat
+    assignment_expr_no_bf.as(:left) >> (sp? >> `,`.as(:binary) >> sp? >> assignment_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:block) do
-    `{` >> sp? >> source_elements >> sp? >> `}`
+    `{` >> sp? >> source_elements.as(:block) >> sp? >> `}`
   end
 
   rule(:variable_statement) do
@@ -372,10 +420,10 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:variable_declaration) do
-    ident >> sp? >> `=` >> sp? >> assignment_expr
+    ident.as(:var) >> (sp? >> `=` >> sp? >> assignment_expr).maybe.as(:init)
   end
   rule(:variable_declaration_no_in) do
-    ident >> (sp? >> `=` >> sp? >> assignment_expr_no_in).maybe
+    ident.as(:var) >> (sp? >> `=` >> sp? >> assignment_expr_no_in).maybe.as(:init)
   end
 
   rule(:const_statement) do
@@ -385,7 +433,7 @@ class Capuchin::Parser < Parslet::Parser
     (const_declaration >> sp? >> `,` >> sp?).repeat >> const_declaration
   end
   rule(:const_declaration) do
-    ident >> (sp? >> `=` >> sp? >> assignment_expr).maybe
+    ident.as(:const) >> (sp? >> `=` >> sp? >> assignment_expr.as(:init)).maybe
   end
 
   rule(:empty_statement) do
@@ -393,7 +441,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:expr_statement) do
-    expr_no_bf >> sp? >> (`;` | error)
+    expr_no_bf.as(:expr_statement) >> sp? >> (`;` | error)
   end
 
   rule(:if_statement) do
@@ -417,7 +465,7 @@ class Capuchin::Parser < Parslet::Parser
     `break` >> (sp >> ident).maybe >> sp? >> (`;` | error)
   end
   rule(:return_statement) do
-    `return` >> sp? >> (expr >> sp?) >> (`;` | error)
+    `return` >> sp? >> (expr >> sp?).maybe.as(:return) >> (`;` | error)
   end
 
   rule(:with_statement) do
@@ -425,38 +473,39 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:switch_statement) do
-    `switch` >> sp? >> `(` >> sp? >> expr >> sp? >> `)` >> sp? >> case_block
+    `switch` >> sp? >> `(` >> sp? >> expr.as(:switch) >> sp? >> `)` >> sp? >> case_block.as(:cases)
   end
 
   rule(:case_block) do
     `{` >> sp? >> case_clause.repeat >> (default_clause >> case_clause.repeat).maybe >> `}`
   end
   rule(:case_clause) do
-    `case` >> sp? >> expr >> sp? >> `:` >> sp? >> source_elements >> sp?
+    `case` >> sp? >> expr.as(:case) >> sp? >> `:` >> sp? >> source_elements.as(:code) >> sp?
   end
   rule(:case_clause) do
-    `default` >> sp? >> `:` >> sp? >> source_elements >> sp?
+    `default`.as(:default) >> sp? >> `:` >> sp? >> source_elements.as(:code) >> sp?
   end
 
   rule(:labelled_statement) do
-    ident >> sp? >> `:` >> sp? >> statement
+    ident.as(:label) >> sp? >> `:` >> sp? >> statement
   end
 
   rule(:throw_statement) do
-    `throw` >> sp? >> expr >> sp? >> (`;` | error)
+    `throw` >> sp? >> expr.as(:throw) >> sp? >> (`;` | error)
   end
 
   rule(:try_statement) do
-    `try` >> sp? >> block >> sp? >> (`finally` >> sp? >> block |
-                        `catch` >> sp? >> `(` >> sp? >> ident >> sp? >> `)` >> sp? >> block >> (sp? >> `finally` >> sp? >> block).maybe
-                        )
+    `try` >> sp? >> block >> sp? >> (
+      `finally` >> sp? >> block |
+      `catch` >> sp? >> `(` >> sp? >> ident >> sp? >> `)` >> sp? >> block >> (sp? >> `finally` >> sp? >> block).maybe
+    )
   end
 
   rule(:function_declaration) do
-    `function` >> sp >> ident >> sp? >> `(` >> sp? >> (formal_parameter_list >> sp?).maybe >> `)` >> sp? >> `{` >> sp? >> function_body >> sp? >> `}`
+    `function` >> sp >> ident.as(:name) >> sp? >> `(` >> sp? >> (formal_parameter_list >> sp?).maybe.as(:args) >> `)` >> sp? >> `{` >> sp? >> function_body.as(:body) >> sp? >> `}`
   end
   rule(:function_expr) do
-    `function` >> (sp >> ident).maybe >> sp? >> `(` >> sp? >> (formal_parameter_list >> sp?).maybe >> `)` >> sp? >> `{` >> sp? >> function_body >> sp? >> `}`
+    `function` >> (sp >> ident).maybe.as(:name) >> sp? >> `(` >> sp? >> (formal_parameter_list >> sp?).maybe.as(:args) >> `)` >> sp? >> `{` >> sp? >> function_body.as(:body) >> sp? >> `}`
   end
 
   rule(:formal_parameter_list) do
@@ -469,12 +518,12 @@ class Capuchin::Parser < Parslet::Parser
 
 
   rule(:string) do
-    `"` >> (`\\` >> any | match(%([^"\]))).repeat >> `"` |
-    `'` >> (`\\` >> any | match(%([^'\]))).repeat >> `'`
+    `"` >> (`\\` >> any | match(%([^"\]))).repeat.as(:string) >> `"` |
+    `'` >> (`\\` >> any | match(%([^'\]))).repeat.as(:string) >> `'`
   end
 
   rule(:number) do
-    float | integer
+    float.as(:float) | integer.as(:integer)
   end
   rule(:float) do
     digit.repeat(1) >> `.` >> digit.repeat >> (match['eE'] >> match['-+'].maybe >> digit.repeat(1)).maybe |
@@ -493,12 +542,14 @@ class Capuchin::Parser < Parslet::Parser
       match['^\[\/'].repeat(1) |
       `\\` >> any |
       `[` >> `^`.maybe >> `]`.maybe >> (match['^\]'].repeat(1) | `\\` >> any).repeat >> `]`
-    ).repeat >> `/` >> match['gim'].repeat
+    ).repeat.as(:regexp) >> `/` >> match['gim'].repeat.as(:flags)
   end
 
   rule(:ident) do
-    reserved >> match['A-Za-z0-9_$'].repeat(1) |
-    reserved.absnt? >> match['A-Za-z_$'] >> match['A-Za-z0-9_$'].repeat
+    (
+      reserved >> match['A-Za-z0-9_$'].repeat(1) |
+      reserved.absnt? >> match['A-Za-z_$'] >> match['A-Za-z0-9_$'].repeat
+    ).as(:ident)
   end
 
   RESERVED_WORDS = %w(
@@ -520,8 +571,8 @@ class Capuchin::Parser < Parslet::Parser
 
   rule(:sp) do
     match("[ \t\n]").repeat(1) |
-    `//` >> any.repeat |
-    `/*` >> (`*/`.absnt? >> any).repeat >> `*/`
+    `//` >> any.repeat.as(:comment) |
+    `/*` >> (`*/`.absnt? >> any).repeat.as(:comment) >> `*/`
   end
   rule(:sp?) { sp.repeat }
 end

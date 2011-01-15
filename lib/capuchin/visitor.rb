@@ -9,14 +9,20 @@ module Capuchin::Visitable
     if klass
       visitor.send(:"visit_#{klass.name.split(/::/)[-1]}", self, &block)
     else
-      raise "No visitor for '#{self.class}'"
+      raise "#{visitor.class}: No visitor for '#{self.class}'"
     end
   end
 end
 
 class Capuchin::Visitor
   def accept(target)
-    target.accept(self)
+    if Array === target
+      target.each do |x|
+        accept(x)
+      end
+    else
+      target.accept(self)
+    end
   end
 end
 
@@ -32,9 +38,6 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
     def visit_VarDeclNode(o)
       name = o.name.to_sym
       @scope.add_variable name, o
-
-      # Scan the value
-      accept o.value if o.value
     end
     def visit_FunctionDeclNode(o)
       name = o.value.to_sym
@@ -45,7 +48,7 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
         g.push_const :Capuchin
         g.find_const :Function
         g.push_literal o.value.to_sym
-        g.create_block v.compile_method(o.line, o.value, o.arguments.map {|p| p.value }, o.function_body)
+        g.create_block v.compile_method(o.line, o.value, o.arguments, o.function_body)
         g.send_with_block :new, 1
 
         var = g.state.scope.variables[o.value.to_sym]
@@ -53,9 +56,11 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
         g.pop
       end
     end
-    def visit_FunctionExprNode(o)
-      # Don't scan function_body; it's a new scope
-    end
+
+    # Anything we haven't defined a particular visitor for, we just
+    # ignore; we're only looking for a few statements that can only
+    # appear at the top level.
+    def visit_Node(o); end
   end
 
   class Scope
@@ -188,7 +193,7 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
     @g.push_const :Capuchin
     @g.find_const :Function
     @g.push_literal o.value.to_sym
-    @g.create_block compile_method(o.line, o.value, o.arguments.map {|p| p.value }, o.function_body)
+    @g.create_block compile_method(o.line, o.value, o.arguments, o.function_body)
     @g.send_with_block :new, 1
   end
   def visit_FunctionDeclNode(o)
@@ -221,7 +226,7 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
 
       meth.set_line line
 
-      body.accept DeclScanner.new(meth.state.scope)
+      DeclScanner.new(meth.state.scope).accept(body)
 
       if meth.state.scope.need_arguments? || arguments.size > 0
         # We use "block-style" arguments; our parameters are in an
@@ -254,7 +259,7 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
       end
 
       meth.state.scope.append_buffered_definitions meth, v
-      body.accept v
+      v.accept(body)
 
       meth.state.pop_name
 
@@ -423,8 +428,8 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
   def visit_NewExprNode(o)
     # see also: call_bytecode in nodes.rb
     accept o.value
-    args = o.arguments.value
-    o.arguments.value.each do |arg|
+    args = o.arguments
+    o.arguments.each do |arg|
       accept arg
     end
     pos(o)
@@ -796,12 +801,12 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
   def visit_FunctionCallNode(o)
     pos(o)
     o.value.call_bytecode(self, @g) do
-      o.arguments.value.each do |arg|
+      o.arguments.each do |arg|
         accept arg
       end
 
       # block must return the number of arguments
-      o.arguments.value.size
+      o.arguments.size
     end
   end
   def visit_OpEqualNode(o)
