@@ -34,6 +34,7 @@ class RootNode < Node
   end
 end
 
+class ThisNode < Node; end
 class NullNode < Node; end
 class TrueNode < Node; end
 class FalseNode < Node; end
@@ -67,6 +68,7 @@ class FunctionCallNode < Node
     @value, @arguments = value, arguments
   end
 end
+class NewExprNode < FunctionCallNode; end
 
 class ReturnNode < Node
   attr_accessor :value
@@ -174,7 +176,24 @@ class PropertyNode < Node
   end
 end
 
-class DotAccessorNode
+class IfNode < Node
+  attr_accessor :conditions, :value, :else
+  def initialize(conditions, value, else_)
+    @conditions, @value, @else = conditions, value, else_
+  end
+end
+class BlockNode < Node
+  attr_accessor :statements
+  def initialize(statements)
+    @statements = statements
+  end
+end
+
+class DotAccessorNode < Node
+  attr_accessor :value, :accessor
+  def initialize(value, accessor)
+    @value, @accessor = value, accessor
+  end
   def get_bytecode(v, g)
     v.pos(self)
     v.accept self.value
@@ -206,7 +225,11 @@ class DotAccessorNode
     g.send :js_invoke, arg_count + 1
   end
 end
-class BracketAccessorNode
+class BracketAccessorNode < Node
+  attr_accessor :value, :accessor
+  def initialize(value, accessor)
+    @value, @accessor = value, accessor
+  end
   def get_bytecode(v, g)
     v.pos(self)
     v.accept self.value

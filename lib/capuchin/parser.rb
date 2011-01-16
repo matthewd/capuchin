@@ -7,6 +7,7 @@ class Capuchin::ASTBuilder < Parslet::Transform
   rule(:right => subtree(:right), :ops => "") { right }
   rule(:cond => subtree(:cond), :ops => "") { cond }
   rule(:expr => subtree(:expr), :postfix_op => nil) { expr }
+  rule(:expr => subtree(:expr), :calls => "") { expr }
 
   rule(:integer => simple(:x)) { Integer(x) }
   rule(:float => simple(:x)) { Float(x) }
@@ -25,35 +26,24 @@ class Capuchin::ASTBuilder < Parslet::Transform
   rule(:name => simple(:name), :value => simple(:value)) { Capuchin::Nodes::PropertyNode.new(name, value) }
   rule(:object_literal => sequence(:properties)) { Capuchin::Nodes::ObjectLiteralNode.new(properties) }
 
-  rule(:expr => simple(:value), :postfix_op => { :postfix => simple(:op) }) { Capuchin::Nodes::PostfixNode.new(value, op) }
+  rule(:expr => simple(:value), :postfix_op => { :postfix => simple(:op) }) { Capuchin::Nodes::PostfixNode.new(op, value) }
 
   rule(:unary => 'delete', :expr => simple(:value)) { Capuchin::Nodes::DeleteNode.new(value) }
   rule(:unary => 'void', :expr => simple(:value)) { Capuchin::Nodes::VoidNode.new(value) }
   rule(:unary => 'typeof', :expr => simple(:value)) { Capuchin::Nodes::TypeOfNode.new(value) }
-  rule(:unary => '++', :expr => simple(:value)) { Capuchin::Nodes::PrefixNode.new(value, '++') }
-  rule(:unary => '--', :expr => simple(:value)) { Capuchin::Nodes::PrefixNode.new(value, '--') }
+  rule(:unary => '++', :expr => simple(:value)) { Capuchin::Nodes::PrefixNode.new('++', value) }
+  rule(:unary => '--', :expr => simple(:value)) { Capuchin::Nodes::PrefixNode.new('--', value) }
 
   rule(:unary => '+', :expr => simple(:value)) { Capuchin::Nodes::UnaryPlusNode.new(value) }
   rule(:unary => '-', :expr => simple(:value)) { Capuchin::Nodes::UnaryMinusNode.new(value) }
   rule(:unary => '~', :expr => simple(:value)) { Capuchin::Nodes::BitwiseNotNode.new(value) }
   rule(:unary => '!', :expr => simple(:value)) { Capuchin::Nodes::LogicalNotNode.new(value) }
 
-  rule(:single_op => subtree(:op)) { [op] }
   rule(:left => simple(:left), :ops => sequence(:ops)) do
-    x = left
-    until ops.empty?
-      ops.first.left = x
-      x = ops.shift
-    end
-    x
+    ops.inject(left) {|x,op| op.left = x; op }
   end
   rule(:right => simple(:right), :ops => sequence(:ops)) do
-    x = right
-    until ops.empty?
-      ops.last.value = x
-      x = ops.pop
-    end
-    x
+    ops.reverse.inject(right) {|x,op| op.value = x; op }
   end
   rule(:binary => '*', :right => simple(:right)) { Capuchin::Nodes::MultiplyNode.new(nil, right) }
   rule(:binary => '/', :right => simple(:right)) { Capuchin::Nodes::DivideNode.new(nil, right) }
@@ -105,10 +95,24 @@ class Capuchin::ASTBuilder < Parslet::Transform
   rule(:function_declaration => { :name => simple(:name), :args => sequence(:args), :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, args) }
   rule(:function_declaration => { :name => simple(:name), :args => simple(:arg), :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, arg ? [arg] : []) }
 
+  rule(:new => 'new', :expr => simple(:expr), :args => simple(:arg)) { Capuchin::Nodes::NewExprNode.new(expr, arg ? [arg] : []) }
+  rule(:new => 'new', :expr => simple(:expr), :args => sequence(:args)) { Capuchin::Nodes::NewExprNode.new(expr, args) }
+
   rule(:expr => simple(:expr), :args => simple(:arg)) { Capuchin::Nodes::FunctionCallNode.new(expr, arg ? [arg] : []) }
   rule(:expr => simple(:expr), :args => sequence(:args)) { Capuchin::Nodes::FunctionCallNode.new(expr, args) }
 
+  rule(:expr => simple(:left), :calls => sequence(:calls)) do
+    calls.inject(left) {|x,call| call.value = x; call }
+  end
+  rule(:call => { :expr => simple(:expr) }) { Capuchin::Nodes::BracketAccessorNode.new(nil, expr) }
+  rule(:call => { :name => simple(:name) }) { Capuchin::Nodes::DotAccessorNode.new(nil, name) }
+  rule(:call => { :args => simple(:arg) }) { Capuchin::Nodes::FunctionCallNode.new(nil, arg ? [arg] : []) }
+  rule(:call => { :args => sequence(:args) }) { Capuchin::Nodes::FunctionCallNode.new(nil, args) }
+
   rule(:return => simple(:value)) { Capuchin::Nodes::ReturnNode.new(value) }
+
+  #rule(:block => sequence(:statements)) { Capuchin::Nodes::BlockNode.new(statements) }
+  rule(:if_condition => simple(:cond), :true_part => simple(:t), :false_part => simple(:f)) { Capuchin::Nodes::IfNode.new(cond, t, f) }
 end
 
 class Capuchin::Parser < Parslet::Parser
@@ -181,21 +185,21 @@ class Capuchin::Parser < Parslet::Parser
     (
       primary_expr |
       function_expr.as(:function_expr) |
-      `new`.as(:new) >> sp >> member_expr.as(:expr) >> sp? >> arguments.as(:args)
-    ) >> (
+      `new`.as(:new) >> sp >> member_expr.as(:expr) >> sp? >> arguments
+    ).as(:expr) >> (
       sp? >> `[` >> sp? >> expr.as(:expr) >> sp? >> `]` |
-      sp? >> `.` >> sp? >> ident
-    ).as(:member).repeat
+      sp? >> `.` >> sp? >> ident.as(:name)
+    ).as(:call).repeat.as(:calls)
   end
 
   rule(:member_expr_no_bf) do
     (
       primary_expr_no_brace |
-      `new`.as(:new) >> sp >> member_expr.as(:expr) >> sp? >> arguments.as(:args)
-    ) >> (
+      `new`.as(:new) >> sp >> member_expr.as(:expr) >> sp? >> arguments
+    ).as(:expr) >> (
       sp? >> `[` >> sp? >> expr.as(:expr) >> sp? >> `]` |
-      sp? >> `.` >> sp? >> ident
-    ).as(:member).repeat
+      sp? >> `.` >> sp? >> ident.as(:name)
+    ).as(:call).repeat.as(:calls)
   end
 
   rule(:new_expr) do
@@ -209,27 +213,27 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:call_expr) do
-    member_expr.as(:expr) >> sp? >> arguments.as(:args) >>
+    (member_expr.as(:expr) >> sp? >> arguments).as(:expr) >>
     (sp? >>
-      (arguments.as(:args) |
+      (arguments |
       `[` >> sp? >> expr.as(:expr) >> sp? >> `]` |
-      `.` >> sp? >> ident
+      `.` >> sp? >> ident.as(:name)
       )
-    ).repeat.as(:calls)
+    ).as(:call).repeat.as(:calls)
   end
 
   rule(:call_expr_no_bf) do
-    member_expr_no_bf.as(:expr) >> sp? >> arguments.as(:args) >>
+    (member_expr_no_bf.as(:expr) >> sp? >> arguments).as(:expr) >>
     (sp? >>
-      (arguments.as(:args) |
+      (arguments |
       `[` >> sp? >> expr.as(:expr) >> sp? >> `]` |
-      `.` >> sp? >> ident
+      `.` >> sp? >> ident.as(:name)
       )
-    ).repeat.as(:calls)
+    ).as(:call).repeat.as(:calls)
   end
 
   rule(:arguments) do
-    `(` >> sp? >> argument_list.maybe >> sp? >> `)`
+    `(` >> sp? >> argument_list.maybe.as(:args) >> sp? >> `)`
   end
 
   rule(:argument_list) do
@@ -445,7 +449,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:if_statement) do
-    `if` >> sp? >> `(` >> sp? >> expr >> sp? >> `)` >> sp? >> statement >> (sp? >> `else` >> sp? >> statement).maybe
+    `if` >> sp? >> `(` >> sp? >> expr.as(:if_condition) >> sp? >> `)` >> sp? >> statement.as(:true_part) >> (sp? >> `else` >> sp? >> statement).maybe.as(:false_part)
   end
 
   rule(:iteration_statement) do
@@ -459,21 +463,21 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:continue_statement) do
-    `continue` >> (sp >> ident).maybe >> sp? >> (`;` | error)
+    `continue` >> (sp >> ident).maybe.as(:continue) >> sp? >> (`;` | error)
   end
   rule(:break_statement) do
-    `break` >> (sp >> ident).maybe >> sp? >> (`;` | error)
+    `break` >> (sp >> ident).maybe.as(:break) >> sp? >> (`;` | error)
   end
   rule(:return_statement) do
     `return` >> sp? >> (expr >> sp?).maybe.as(:return) >> (`;` | error)
   end
 
   rule(:with_statement) do
-    `with` >> sp? >> `(` >> sp? >> expr >> sp? >> `)` >> sp? >> statement
+    `with` >> sp? >> `(` >> sp? >> expr.as(:with_expr) >> sp? >> `)` >> sp? >> statement
   end
 
   rule(:switch_statement) do
-    `switch` >> sp? >> `(` >> sp? >> expr.as(:switch) >> sp? >> `)` >> sp? >> case_block.as(:cases)
+    (`switch` >> sp? >> `(` >> sp? >> expr.as(:switch) >> sp? >> `)` >> sp? >> case_block.as(:cases)).as(:switch_statement)
   end
 
   rule(:case_block) do
@@ -482,7 +486,7 @@ class Capuchin::Parser < Parslet::Parser
   rule(:case_clause) do
     `case` >> sp? >> expr.as(:case) >> sp? >> `:` >> sp? >> source_elements.as(:code) >> sp?
   end
-  rule(:case_clause) do
+  rule(:default_clause) do
     `default`.as(:default) >> sp? >> `:` >> sp? >> source_elements.as(:code) >> sp?
   end
 
@@ -518,8 +522,10 @@ class Capuchin::Parser < Parslet::Parser
 
 
   rule(:string) do
-    `"` >> (`\\` >> any | match(%([^"\]))).repeat.as(:string) >> `"` |
-    `'` >> (`\\` >> any | match(%([^'\]))).repeat.as(:string) >> `'`
+    (
+      `"` >> (`\\` >> any | match(%([^"\]))).repeat >> `"` |
+      `'` >> (`\\` >> any | match(%([^'\]))).repeat >> `'`
+    ).as(:string)
   end
 
   rule(:number) do

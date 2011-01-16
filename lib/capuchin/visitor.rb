@@ -408,6 +408,11 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
     end
     after.set!
   end
+  def visit_BlockNode(o)
+    o.statements.each do |st|
+      accept st
+    end
+  end
   def visit_TypeOfNode(o)
     accept o.value
     pos(o)
