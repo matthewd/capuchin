@@ -547,8 +547,8 @@ class Capuchin::Parser < Parslet::Parser
 
   rule(:ident) do
     (
-      reserved >> match['A-Za-z0-9_$'].repeat(1) |
-      reserved.absnt? >> match['A-Za-z_$'] >> match['A-Za-z0-9_$'].repeat
+      (reserved >> match['A-Za-z0-9_$'].absnt?).absnt? >>
+      match['A-Za-z_$'] >> match['A-Za-z0-9_$'].repeat
     ).as(:ident)
   end
 
