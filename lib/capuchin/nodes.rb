@@ -70,7 +70,25 @@ class FunctionCallNode < Node
 end
 class NewExprNode < FunctionCallNode; end
 
+class BreakNode < Node
+  attr_accessor :value
+  def initialize(value)
+    @value = value
+  end
+end
+class ContinueNode < Node
+  attr_accessor :value
+  def initialize(value)
+    @value = value
+  end
+end
 class ReturnNode < Node
+  attr_accessor :value
+  def initialize(value)
+    @value = value
+  end
+end
+class ThrowNode < Node
   attr_accessor :value
   def initialize(value)
     @value = value
@@ -163,6 +181,12 @@ class ConditionalNode < Node
   end
 end
 
+class VarStatementNode < Node
+  attr_accessor :value
+  def initialize(value)
+    @value = value
+  end
+end
 class VarDeclNode < Node
   attr_accessor :name, :value, :const
   def initialize(name, value, const=false)
@@ -176,10 +200,28 @@ class PropertyNode < Node
   end
 end
 
+class ForNode < Node
+  attr_accessor :init, :test, :counter, :value
+  def initialize(init, test, counter, value)
+    @init, @test, @counter, @value = init, test, counter, value
+  end
+end
 class IfNode < Node
   attr_accessor :conditions, :value, :else
   def initialize(conditions, value, else_)
     @conditions, @value, @else = conditions, value, else_
+  end
+end
+class SwitchNode < Node
+  attr_accessor :left, :value
+  def initialize(left, value)
+    @left, @value = left, value
+  end
+end
+class CaseClauseNode < Node
+  attr_accessor :left, :value
+  def initialize(left, value)
+    @left, @value = left, value
   end
 end
 class BlockNode < Node

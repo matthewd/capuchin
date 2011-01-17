@@ -39,6 +39,15 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
       name = o.name.to_sym
       @scope.add_variable name, o
     end
+    def visit_ForNode(o)
+      accept o.init if Capuchin::Nodes::VarStatementNode === o.init
+    end
+    def visit_ForInNode(o)
+      accept o.init if Capuchin::Nodes::VarStatementNode === o.init
+    end
+    def visit_VarStatementNode(o)
+      accept o.value
+    end
     def visit_FunctionDeclNode(o)
       name = o.value.to_sym
       @scope.add_variable name, o
@@ -276,6 +285,9 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
     meth
   end
 
+  def visit_VarStatementNode(o)
+    accept o.value
+  end
   def visit_VarDeclNode(o)
     var = @g.state.scope.variables[o.name.to_sym]
     if o.value
@@ -472,7 +484,7 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
 
     accept o.left
     pos(o)
-    if cases = o.value.value
+    if cases = o.value
       has_default = false
       cases = cases.map {|c| [c, @g.new_label] }
       cases.each do |(c,code)|

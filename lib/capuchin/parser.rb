@@ -85,6 +85,8 @@ class Capuchin::ASTBuilder < Parslet::Transform
   rule(:binary => ',', :right => simple(:right)) { Capuchin::Nodes::CommaNode.new(nil, right) }
 
   rule(:var => simple(:var), :init => simple(:init)) { Capuchin::Nodes::VarDeclNode.new(var, init) }
+  rule(:vars => simple(:var)) { Capuchin::Nodes::VarStatementNode.new([var]) }
+  rule(:vars => sequence(:vars)) { Capuchin::Nodes::VarStatementNode.new(vars) }
 
   rule(:expr_statement => simple(:expr)) { Capuchin::Nodes::ExpressionStatementNode.new(expr) }
   rule(:statement => simple(:statement)) { statement }
@@ -109,10 +111,21 @@ class Capuchin::ASTBuilder < Parslet::Transform
   rule(:call => { :args => simple(:arg) }) { Capuchin::Nodes::FunctionCallNode.new(nil, arg ? [arg] : []) }
   rule(:call => { :args => sequence(:args) }) { Capuchin::Nodes::FunctionCallNode.new(nil, args) }
 
+  rule(:break => simple(:value)) { Capuchin::Nodes::BreakNode.new(value) }
+  rule(:continue => simple(:value)) { Capuchin::Nodes::ContinueNode.new(value) }
   rule(:return => simple(:value)) { Capuchin::Nodes::ReturnNode.new(value) }
+  rule(:throw => simple(:value)) { Capuchin::Nodes::ThrowNode.new(value) }
 
-  #rule(:block => sequence(:statements)) { Capuchin::Nodes::BlockNode.new(statements) }
+  rule(:label => simple(:label), :labelled => simple(:statement)) { Capuchin::Nodes::LabelNode.new(label, statement) }
+
+  rule(:block => sequence(:statements)) { Capuchin::Nodes::BlockNode.new(statements) }
   rule(:if_condition => simple(:cond), :true_part => simple(:t), :false_part => simple(:f)) { Capuchin::Nodes::IfNode.new(cond, t, f) }
+
+  rule(:case => simple(:value), :code => sequence(:code)) { Capuchin::Nodes::CaseClauseNode.new(value, code) }
+  rule(:default => 'default', :code => sequence(:code)) { Capuchin::Nodes::CaseClauseNode.new(nil, code) }
+  rule(:switch_statement => { :switch => simple(:value), :cases => sequence(:options) }) { Capuchin::Nodes::SwitchNode.new(value, options) }
+
+  rule(:init => simple(:init), :test => simple(:cond), :counter => simple(:counter), :code => simple(:code)) { Capuchin::Nodes::ForNode.new(init, cond, counter, code) }
 end
 
 class Capuchin::Parser < Parslet::Parser
@@ -413,7 +426,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:variable_statement) do
-    `var` >> sp >> variable_declaration_list >> sp? >> (`;` | error)
+    `var` >> sp >> variable_declaration_list.as(:vars) >> sp? >> (`;` | error)
   end
 
   rule(:variable_declaration_list) do
@@ -453,13 +466,13 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:iteration_statement) do
-    `do` >> sp? >> statement >> sp? >> `while` >> sp? >> `(` >> sp? >> expr >> sp? >> `)` >> sp? >> (`;` | error) |
-    `while` >> sp? >> `(` >> sp? >> expr >> sp? >> `)` >> sp? >> statement |
-    `for` >> sp? >> `(` >> sp? >> (expr_no_in >> sp?).maybe >> `;` >> sp? >> (expr >> sp?).maybe >> `;` >> sp? >> (expr >> sp?).maybe >> `)` >> sp? >> statement |
-    `for` >> sp? >> `(` >> sp? >> `var` >> sp >> variable_declaration_list_no_in >> sp? >> `;` >> sp? >> (expr >> sp?).maybe >> `;` >> sp? >> (expr >> sp?).maybe >> `)` >> sp? >> statement |
-    `for` >> `(` >> left_hand_side_expr >> sp >> `in` >> sp >> (expr >> sp?).maybe >> `)` >> sp? >> statement |
-    `for` >> `(` >> `var` >> sp >> ident >> sp >> `in` >> sp >> (expr >> sp?).maybe >> `)` >> sp? >> statement |
-    `for` >> `(` >> `var` >> sp >> ident >> sp? >> `=` >> sp? >> assignment_expr_no_in >> sp >> `in` >> sp >> (expr >> sp?).maybe >> `)` >> sp? >> statement
+    `do` >> sp? >> statement.as(:code) >> sp? >> `while` >> sp? >> `(` >> sp? >> expr.as(:do_while) >> sp? >> `)` >> sp? >> (`;` | error) |
+    `while` >> sp? >> `(` >> sp? >> expr.as(:while) >> sp? >> `)` >> sp? >> statement.as(:code) |
+    `for` >> sp? >> `(` >> sp? >> (expr_no_in >> sp?).maybe.as(:init) >> `;` >> sp? >> (expr >> sp?).maybe.as(:test) >> `;` >> sp? >> (expr >> sp?).maybe.as(:counter) >> `)` >> sp? >> statement.as(:code) |
+    `for` >> sp? >> `(` >> sp? >> (`var` >> sp >> variable_declaration_list_no_in.as(:vars)).as(:init) >> sp? >> `;` >> sp? >> (expr >> sp?).maybe.as(:test) >> `;` >> sp? >> (expr >> sp?).maybe.as(:counter) >> `)` >> sp? >> statement.as(:code) |
+    `for` >> sp? >> `(` >> sp? >> (left_hand_side_expr.as(:left) >> sp >> `in` >> sp >> (expr >> sp?).maybe.as(:right)).as(:for_in) >> `)` >> sp? >> statement.as(:code) |
+    `for` >> sp? >> `(` >> sp? >> ((`var` >> sp >> ident.as(:var)).as(:vars) >> sp >> `in` >> sp >> (expr >> sp?).maybe.as(:right)).as(:for_in) >> `)` >> sp? >> statement.as(:code) |
+    `for` >> sp? >> `(` >> sp? >> ((`var` >> sp >> ident.as(:var) >> sp? >> `=` >> sp? >> assignment_expr_no_in.as(:expr)).as(:vars) >> sp >> `in` >> sp >> (expr >> sp?).maybe.as(:right)).as(:for_in) >> `)` >> sp? >> statement.as(:code)
   end
 
   rule(:continue_statement) do
@@ -491,7 +504,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:labelled_statement) do
-    ident.as(:label) >> sp? >> `:` >> sp? >> statement
+    ident.as(:label) >> sp? >> `:` >> sp? >> statement.as(:labelled)
   end
 
   rule(:throw_statement) do
