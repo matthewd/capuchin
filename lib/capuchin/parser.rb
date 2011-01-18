@@ -132,7 +132,8 @@ class Capuchin::Parser < Parslet::Parser
   alias_method :`, :str
 
   rule(:source_file) do
-    source_element.repeat >> sp?
+    source_element >> source_file |
+    sp?
   end
   root(:source_file)
 
@@ -216,13 +217,13 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:new_expr) do
-    `new`.as(:new) >> sp >> new_expr.as(:expr) |
-    member_expr
+    member_expr |
+    `new`.as(:new) >> sp >> new_expr.as(:expr)
   end
 
   rule(:new_expr_no_bf) do
-    `new`.as(:new) >> sp >> new_expr.as(:expr) |
-    member_expr_no_bf
+    member_expr_no_bf |
+    `new`.as(:new) >> sp >> new_expr.as(:expr)
   end
 
   rule(:call_expr) do
@@ -327,13 +328,13 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:bitwise_and_expr) do
-    equality_expr.as(:left) >> (sp? >> `&`.as(:binary) >> sp? >> equality_expr.as(:right)).repeat.as(:ops)
+    equality_expr.as(:left) >> (sp? >> `&`.as(:binary) >> `&`.absnt? >> sp? >> equality_expr.as(:right)).repeat.as(:ops)
   end
   rule(:bitwise_and_expr_no_in) do
-    equality_expr_no_in.as(:left) >> (sp? >> `&`.as(:binary) >> sp? >> equality_expr_no_in.as(:right)).repeat.as(:ops)
+    equality_expr_no_in.as(:left) >> (sp? >> `&`.as(:binary) >> `&`.absnt? >> sp? >> equality_expr_no_in.as(:right)).repeat.as(:ops)
   end
   rule(:bitwise_and_expr_no_bf) do
-    equality_expr_no_bf.as(:left) >> (sp? >> `&`.as(:binary) >> sp? >> equality_expr.as(:right)).repeat.as(:ops)
+    equality_expr_no_bf.as(:left) >> (sp? >> `&`.as(:binary) >> `&`.absnt? >> sp? >> equality_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:bitwise_xor_expr) do
@@ -347,13 +348,13 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:bitwise_or_expr) do
-    bitwise_xor_expr.as(:left) >> (sp? >> `|`.as(:binary) >> sp? >> bitwise_xor_expr.as(:right)).repeat.as(:ops)
+    bitwise_xor_expr.as(:left) >> (sp? >> `|`.as(:binary) >> `|`.absnt? >> sp? >> bitwise_xor_expr.as(:right)).repeat.as(:ops)
   end
   rule(:bitwise_or_expr_no_in) do
-    bitwise_xor_expr_no_in.as(:left) >> (sp? >> `|`.as(:binary) >> sp? >> bitwise_xor_expr_no_in.as(:right)).repeat.as(:ops)
+    bitwise_xor_expr_no_in.as(:left) >> (sp? >> `|`.as(:binary) >> `|`.absnt? >> sp? >> bitwise_xor_expr_no_in.as(:right)).repeat.as(:ops)
   end
   rule(:bitwise_or_expr_no_bf) do
-    bitwise_xor_expr_no_bf.as(:left) >> (sp? >> `|`.as(:binary) >> sp? >> bitwise_xor_expr.as(:right)).repeat.as(:ops)
+    bitwise_xor_expr_no_bf.as(:left) >> (sp? >> `|`.as(:binary) >> `|`.absnt? >> sp? >> bitwise_xor_expr.as(:right)).repeat.as(:ops)
   end
 
   rule(:logical_and_expr) do
@@ -397,7 +398,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:assignment_operator) do
-    `=` |
+    `=` >> `=`.absnt? |
     `+=` |
     `-=` |
     `*=` |
@@ -589,8 +590,8 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:sp) do
-    match("[ \t\n]").repeat(1) |
-    `//` >> any.repeat.as(:comment) |
+    match("[ \t\r\n]").repeat(1) |
+    `//` >> match("[^\r\n]").repeat.as(:comment) |
     `/*` >> (`*/`.absnt? >> any).repeat.as(:comment) >> `*/`
   end
   rule(:sp?) { sp.repeat }
