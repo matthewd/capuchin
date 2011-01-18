@@ -41,9 +41,25 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
     end
     def visit_ForNode(o)
       accept o.init if Capuchin::Nodes::VarStatementNode === o.init
+      accept o.value
     end
     def visit_ForInNode(o)
       accept o.init if Capuchin::Nodes::VarStatementNode === o.init
+      accept o.value
+    end
+    def visit_IfNode(o)
+      accept o.value
+      accept o.else
+    end
+    def visit_SwitchNode(o)
+      o.value.each do |c|
+        accept c.value
+      end
+    end
+    def visit_BlockNode(o)
+      o.statements.each do |st|
+        accept st
+      end
     end
     def visit_VarStatementNode(o)
       accept o.value
