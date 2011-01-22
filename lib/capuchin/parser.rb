@@ -450,7 +450,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:variable_statement) do
-    `var` >> sp >> variable_declaration_list.as(:vars) >> sp? >> (`;` | error)
+    `var` >> sp >> variable_declaration_list.as(:vars) >> (sp? >> `;` | error)
   end
 
   rule(:variable_declaration_list) do
@@ -468,7 +468,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:const_statement) do
-    `const` >> sp >> const_declaration_list >> sp? >> (`;` | error)
+    `const` >> sp >> const_declaration_list >> (sp? >> `;` | error)
   end
   rule(:const_declaration_list) do
     const_declaration.as(:first) >> (sp? >> `,` >> sp? >> const_declaration).repeat.as(:rest)
@@ -482,7 +482,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:expr_statement) do
-    expr_no_bf.as(:expr_statement) >> sp? >> (`;` | error)
+    expr_no_bf.as(:expr_statement) >> (sp? >> `;` | error)
   end
 
   rule(:if_statement) do
@@ -490,7 +490,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:iteration_statement) do
-    `do` >> sp? >> statement.as(:code) >> sp? >> `while` >> sp? >> `(` >> sp? >> expr.as(:do_while) >> sp? >> `)` >> sp? >> (`;` | error) |
+    `do` >> sp? >> statement.as(:code) >> sp? >> `while` >> sp? >> `(` >> sp? >> expr.as(:do_while) >> sp? >> `)` >> (sp? >> `;` | error) |
     `while` >> sp? >> `(` >> sp? >> expr.as(:while) >> sp? >> `)` >> sp? >> statement.as(:code) |
     `for` >> sp? >> `(` >> sp? >> (expr_no_in >> sp?).maybe.as(:init) >> `;` >> sp? >> (expr >> sp?).maybe.as(:test) >> `;` >> sp? >> (expr >> sp?).maybe.as(:counter) >> `)` >> sp? >> statement.as(:code) |
     `for` >> sp? >> `(` >> sp? >> (`var` >> sp >> variable_declaration_list_no_in.as(:vars)).as(:init) >> sp? >> `;` >> sp? >> (expr >> sp?).maybe.as(:test) >> `;` >> sp? >> (expr >> sp?).maybe.as(:counter) >> `)` >> sp? >> statement.as(:code) |
@@ -500,13 +500,13 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:continue_statement) do
-    `continue` >> (sp >> ident).maybe.as(:continue) >> sp? >> (`;` | error)
+    `continue` >> (sp >> ident).maybe.as(:continue) >> (sp? >> `;` | error)
   end
   rule(:break_statement) do
-    `break` >> (sp >> ident).maybe.as(:break) >> sp? >> (`;` | error)
+    `break` >> (sp >> ident).maybe.as(:break) >> (sp? >> `;` | error)
   end
   rule(:return_statement) do
-    `return` >> sp? >> (expr >> sp?).maybe.as(:return) >> (`;` | error)
+    `return` >> (sp? >> expr).maybe.as(:return) >> (sp? >> `;` | error)
   end
 
   rule(:with_statement) do
@@ -532,7 +532,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:throw_statement) do
-    `throw` >> sp? >> expr.as(:throw) >> sp? >> (`;` | error)
+    `throw` >> sp? >> expr.as(:throw) >> (sp? >> `;` | error)
   end
 
   rule(:try_statement) do
@@ -605,7 +605,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:error) do
-    match("[ \t]").repeat >> `\n` | eof
+    match("[ \t]").repeat >> (`}`.prsnt? | match("[\r\n]") | eof)
   end
 
   rule(:eof) do
