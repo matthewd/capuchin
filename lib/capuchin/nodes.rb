@@ -349,7 +349,7 @@ class CaseClauseNode < Node
     @left, @value = left, value
   end
   def visit(g)
-    g.accept left
+    g.accept left if left
     g.accept value
   end
 end
