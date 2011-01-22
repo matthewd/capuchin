@@ -3,11 +3,14 @@ require 'parslet'
 module Capuchin; end
 
 class Capuchin::ASTBuilder < Parslet::Transform
-  rule(:left => subtree(:left), :ops => "") { left }
-  rule(:right => subtree(:right), :ops => "") { right }
-  rule(:cond => subtree(:cond), :ops => "") { cond }
+  rule(:first => simple(:first), :rest => sequence(:rest)) { [first] + rest }
+
+  rule(:cond => subtree(:cond)) { cond }
+  rule(:left => subtree(:left), :ops => []) { left }
+  rule(:right => subtree(:right), :ops => []) { right }
+  rule(:cond => subtree(:cond), :ops => []) { cond }
   rule(:expr => subtree(:expr), :postfix_op => nil) { expr }
-  rule(:expr => subtree(:expr), :calls => "") { expr }
+  rule(:expr => subtree(:expr), :calls => []) { expr }
 
   rule(:integer => simple(:x)) { Integer(x) }
   rule(:float => simple(:x)) { Float(x) }
@@ -25,6 +28,24 @@ class Capuchin::ASTBuilder < Parslet::Transform
 
   rule(:name => simple(:name), :value => simple(:value)) { Capuchin::Nodes::PropertyNode.new(name, value) }
   rule(:object_literal => sequence(:properties)) { Capuchin::Nodes::ObjectLiteralNode.new(properties) }
+  rule(:element => simple(:el)) { el }
+  rule(:skip => simple(:_)) { nil }
+  rule(:element => simple(:element), :middle_elision => sequence(:middle)) {
+    [element] + middle.map { nil }
+  }
+  rule(:leading_elision => sequence(:leading), :parts => subtree(:parts), :last_element => simple(:last)) {
+    if last
+      leading.map { nil } + parts.flatten + [last]
+    else
+      tmp = leading.map { nil } + parts.flatten
+
+      # Trailing comma is optional sugar, not an elided value
+      tmp.pop if tmp.last.nil?
+
+      tmp
+    end
+  }
+  rule(:array => { :elements => sequence(:elements) }) { Capuchin::Nodes::ArrayNode.new(elements) }
 
   rule(:expr => simple(:value), :postfix_op => { :postfix => simple(:op) }) { Capuchin::Nodes::PostfixNode.new(op, value) }
 
@@ -85,31 +106,30 @@ class Capuchin::ASTBuilder < Parslet::Transform
   rule(:binary => ',', :right => simple(:right)) { Capuchin::Nodes::CommaNode.new(nil, right) }
 
   rule(:var => simple(:var), :init => simple(:init)) { Capuchin::Nodes::VarDeclNode.new(var, init) }
-  rule(:vars => simple(:var)) { Capuchin::Nodes::VarStatementNode.new([var]) }
   rule(:vars => sequence(:vars)) { Capuchin::Nodes::VarStatementNode.new(vars) }
 
   rule(:expr_statement => simple(:expr)) { Capuchin::Nodes::ExpressionStatementNode.new(expr) }
   rule(:statement => simple(:statement)) { statement }
 
   rule(:function_expr => { :name => simple(:name), :args => sequence(:args), :body => sequence(:body) }) { Capuchin::Nodes::FunctionExprNode.new(name || 'function', body, args) }
-  rule(:function_expr => { :name => simple(:name), :args => simple(:arg), :body => sequence(:body) }) { Capuchin::Nodes::FunctionExprNode.new(name || 'function', body, arg ? [arg] : []) }
+  rule(:function_expr => { :name => simple(:name), :args => nil, :body => sequence(:body) }) { Capuchin::Nodes::FunctionExprNode.new(name || 'function', body, []) }
 
   rule(:function_declaration => { :name => simple(:name), :args => sequence(:args), :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, args) }
-  rule(:function_declaration => { :name => simple(:name), :args => simple(:arg), :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, arg ? [arg] : []) }
+  rule(:function_declaration => { :name => simple(:name), :args => nil, :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, []) }
 
-  rule(:new => 'new', :expr => simple(:expr), :args => simple(:arg)) { Capuchin::Nodes::NewExprNode.new(expr, arg ? [arg] : []) }
   rule(:new => 'new', :expr => simple(:expr), :args => sequence(:args)) { Capuchin::Nodes::NewExprNode.new(expr, args) }
+  rule(:new => 'new', :expr => simple(:expr), :args => nil) { Capuchin::Nodes::NewExprNode.new(expr, []) }
 
-  rule(:expr => simple(:expr), :args => simple(:arg)) { Capuchin::Nodes::FunctionCallNode.new(expr, arg ? [arg] : []) }
   rule(:expr => simple(:expr), :args => sequence(:args)) { Capuchin::Nodes::FunctionCallNode.new(expr, args) }
+  rule(:expr => simple(:expr), :args => nil) { Capuchin::Nodes::FunctionCallNode.new(expr, []) }
 
   rule(:expr => simple(:left), :calls => sequence(:calls)) do
     calls.inject(left) {|x,call| call.value = x; call }
   end
   rule(:call => { :expr => simple(:expr) }) { Capuchin::Nodes::BracketAccessorNode.new(nil, expr) }
   rule(:call => { :name => simple(:name) }) { Capuchin::Nodes::DotAccessorNode.new(nil, name) }
-  rule(:call => { :args => simple(:arg) }) { Capuchin::Nodes::FunctionCallNode.new(nil, arg ? [arg] : []) }
   rule(:call => { :args => sequence(:args) }) { Capuchin::Nodes::FunctionCallNode.new(nil, args) }
+  rule(:call => { :args => nil }) { Capuchin::Nodes::FunctionCallNode.new(nil, []) }
 
   rule(:break => simple(:value)) { Capuchin::Nodes::BreakNode.new(value) }
   rule(:continue => simple(:value)) { Capuchin::Nodes::ContinueNode.new(value) }
@@ -120,6 +140,11 @@ class Capuchin::ASTBuilder < Parslet::Transform
 
   rule(:block => sequence(:statements)) { Capuchin::Nodes::BlockNode.new(statements) }
   rule(:if_condition => simple(:cond), :true_part => simple(:t), :false_part => simple(:f)) { Capuchin::Nodes::IfNode.new(cond, t, f) }
+  rule(:cond => simple(:cond), :true_expr => simple(:t), :false_expr => simple(:f)) { Capuchin::Nodes::ConditionalNode.new(cond, t, f) }
+  rule(:while => simple(:cond), :code => simple(:code)) { Capuchin::Nodes::WhileNode.new(cond, code) }
+  rule(:do_while => simple(:cond), :code => simple(:code)) { Capuchin::Nodes::DoWhileNode.new(code, cond) }
+  rule(:try => simple(:try_code), :finally => simple(:finally_code)) { Capuchin::Nodes::TryNode.new(try_code, nil, nil, finally_code) }
+  rule(:try => simple(:try_code), :catch_var => simple(:catch_var), :catch => simple(:catch_code), :finally => simple(:finally_code)) { Capuchin::Nodes::TryNode.new(try_code, catch_var, catch_code, finally_code) }
 
   rule(:case => simple(:value), :code => sequence(:code)) { Capuchin::Nodes::CaseClauseNode.new(value, code) }
   rule(:default => 'default', :code => sequence(:code)) { Capuchin::Nodes::CaseClauseNode.new(nil, code) }
@@ -132,8 +157,7 @@ class Capuchin::Parser < Parslet::Parser
   alias_method :`, :str
 
   rule(:source_file) do
-    source_element >> source_file |
-    sp?
+    source_element.repeat >> sp?
   end
   root(:source_file)
 
@@ -184,16 +208,15 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:array_literal) do
-    `[` >> sp? >> element_list.maybe.as(:elements) >> sp? >> elision.maybe >> sp? >> `]`
+    `[` >> sp? >> element_list.maybe.as(:elements) >> sp? >> `]`
   end
 
   rule(:element_list) do
-    (elision >> sp?).maybe >> (assignment_expr.as(:element) >> sp? >> `,` >> sp? >> (elision >> sp?).maybe).repeat >> assignment_expr.as(:element)
+    (`,`.as(:element) >> sp?).repeat.as(:leading_elision) >>
+      (assignment_expr.as(:element) >> sp? >> `,` >> sp? >> (`,`.as(:element) >> sp?).repeat.as(:middle_elision)).repeat.as(:parts) >>
+      assignment_expr.maybe.as(:last_element)
   end
 
-  rule(:elision) do
-    `,`.as(:skip) >> (sp? >> `,`.as(:skip)).repeat
-  end
 
   rule(:member_expr) do
     (
@@ -251,7 +274,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:argument_list) do
-    assignment_expr >> (sp? >> `,` >> sp? >> assignment_expr).repeat
+    assignment_expr.as(:first) >> (sp? >> `,` >> sp? >> assignment_expr).repeat.as(:rest)
   end
 
   rule(:left_hand_side_expr) do
@@ -378,13 +401,13 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:conditional_expr) do
-    logical_or_expr.as(:cond) >> (sp? >> `?` >> sp? >> assignment_expr.as(:true_expr) >> sp? >> `:` >> sp? >> assignment_expr.as(:false_expr)).repeat.as(:ops)
+    logical_or_expr.as(:cond) >> (sp? >> `?` >> sp? >> assignment_expr.as(:true_expr) >> sp? >> `:` >> sp? >> conditional_expr.as(:false_expr)).maybe
   end
   rule(:conditional_expr_no_in) do
-    logical_or_expr_no_in.as(:cond) >> (sp? >> `?` >> sp? >> assignment_expr_no_in.as(:true_expr) >> sp? >> `:` >> sp? >> assignment_expr_no_in.as(:false_expr)).repeat.as(:ops)
+    logical_or_expr_no_in.as(:cond) >> (sp? >> `?` >> sp? >> assignment_expr_no_in.as(:true_expr) >> sp? >> `:` >> sp? >> conditional_expr_no_in.as(:false_expr)).maybe
   end
   rule(:conditional_expr_no_bf) do
-    logical_or_expr_no_bf.as(:cond) >> (sp? >> `?` >> sp? >> assignment_expr.as(:true_expr) >> sp? >> `:` >> sp? >> assignment_expr.as(:false_expr)).repeat.as(:ops)
+    logical_or_expr_no_bf.as(:cond) >> (sp? >> `?` >> sp? >> assignment_expr.as(:true_expr) >> sp? >> `:` >> sp? >> conditional_expr.as(:false_expr)).maybe
   end
 
   rule(:assignment_expr) do
@@ -431,10 +454,10 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:variable_declaration_list) do
-    variable_declaration >> (sp? >> `,` >> sp? >> variable_declaration).repeat
+    variable_declaration.as(:first) >> (sp? >> `,` >> sp? >> variable_declaration).repeat.as(:rest)
   end
   rule(:variable_declaration_list_no_in) do
-    variable_declaration_no_in >> (sp? >> `,` >> sp? >> variable_declaration_no_in).repeat
+    variable_declaration_no_in.as(:first) >> (sp? >> `,` >> sp? >> variable_declaration_no_in).repeat.as(:rest)
   end
 
   rule(:variable_declaration) do
@@ -448,7 +471,7 @@ class Capuchin::Parser < Parslet::Parser
     `const` >> sp >> const_declaration_list >> sp? >> (`;` | error)
   end
   rule(:const_declaration_list) do
-    (const_declaration >> sp? >> `,` >> sp?).repeat >> const_declaration
+    const_declaration.as(:first) >> (sp? >> `,` >> sp? >> const_declaration).repeat.as(:rest)
   end
   rule(:const_declaration) do
     ident.as(:const) >> (sp? >> `=` >> sp? >> assignment_expr.as(:init)).maybe
@@ -513,9 +536,9 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:try_statement) do
-    `try` >> sp? >> block >> sp? >> (
-      `finally` >> sp? >> block |
-      `catch` >> sp? >> `(` >> sp? >> ident >> sp? >> `)` >> sp? >> block >> (sp? >> `finally` >> sp? >> block).maybe
+    `try` >> sp? >> block.as(:try) >> sp? >> (
+      `finally` >> sp? >> block.as(:finally) |
+      `catch` >> sp? >> `(` >> sp? >> ident.as(:catch_var) >> sp? >> `)` >> sp? >> block.as(:catch) >> (sp? >> `finally` >> sp? >> block).maybe.as(:finally)
     )
   end
 
@@ -527,7 +550,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:formal_parameter_list) do
-    ident >> (sp? >> `,` >> sp? >> ident).repeat
+    ident.as(:first) >> (sp? >> `,` >> sp? >> ident).repeat.as(:rest)
   end
 
   rule(:function_body) do
@@ -591,8 +614,8 @@ class Capuchin::Parser < Parslet::Parser
 
   rule(:sp) do
     match("[ \t\r\n]").repeat(1) |
-    `//` >> match("[^\r\n]").repeat.as(:comment) |
-    `/*` >> (`*/`.absnt? >> any).repeat.as(:comment) >> `*/`
+    `//` >> match("[^\r\n]").repeat |
+    `/*` >> (`*/`.absnt? >> any).repeat >> `*/`
   end
   rule(:sp?) { sp.repeat }
 end

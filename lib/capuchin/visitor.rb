@@ -39,31 +39,6 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
       name = o.name.to_sym
       @scope.add_variable name, o
     end
-    def visit_ForNode(o)
-      accept o.init if Capuchin::Nodes::VarStatementNode === o.init
-      accept o.value
-    end
-    def visit_ForInNode(o)
-      accept o.init if Capuchin::Nodes::VarStatementNode === o.init
-      accept o.value
-    end
-    def visit_IfNode(o)
-      accept o.value
-      accept o.else
-    end
-    def visit_SwitchNode(o)
-      o.value.each do |c|
-        accept c.value
-      end
-    end
-    def visit_BlockNode(o)
-      o.statements.each do |st|
-        accept st
-      end
-    end
-    def visit_VarStatementNode(o)
-      accept o.value
-    end
     def visit_FunctionDeclNode(o)
       name = o.value.to_sym
       @scope.add_variable name, o
@@ -82,10 +57,11 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
       end
     end
 
-    # Anything we haven't defined a particular visitor for, we just
-    # ignore; we're only looking for a few statements that can only
-    # appear at the top level.
-    def visit_Node(o); end
+    # For any other node type, use the natural "visit every child node"
+    # behaviour.
+    def visit_Node(o)
+      o.visit self
+    end
   end
 
   class Scope

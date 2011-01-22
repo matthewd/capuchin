@@ -32,28 +32,56 @@ class RootNode < Node
   def initialize(value)
     @value = value
   end
+  def visit(g)
+    g.accept value
+  end
 end
 
-class ThisNode < Node; end
-class NullNode < Node; end
-class TrueNode < Node; end
-class FalseNode < Node; end
+class ThisNode < Node
+  def visit(g); end
+end
+class NullNode < Node
+  def visit(g); end
+end
+class TrueNode < Node
+  def visit(g); end
+end
+class FalseNode < Node
+  def visit(g); end
+end
 
 class LiteralNode < Node
   attr_accessor :value
   def initialize(value)
     @value = value
   end
+  def visit(g); end
 end
 class NumberNode < LiteralNode; end
 class StringNode < LiteralNode; end
 class RegexpNode < LiteralNode; end
-class ObjectLiteralNode < LiteralNode; end
+class ObjectLiteralNode < LiteralNode
+  def visit(g)
+    value.each do |prop|
+      g.accept prop
+    end
+  end
+end
+class ArrayNode < LiteralNode
+  def visit(g)
+    value.each do |el|
+      g.accept el
+    end
+  end
+end
 
 class FunctionDeclNode < Node
   attr_accessor :value, :function_body, :arguments
   def initialize(value, function_body, arguments)
     @value, @function_body, @arguments = value, function_body, arguments
+  end
+  def visit(g)
+    g.accept function_body
   end
 end
 class FunctionExprNode < Node
@@ -61,11 +89,20 @@ class FunctionExprNode < Node
   def initialize(value, function_body, arguments)
     @value, @function_body, @arguments = value, function_body, arguments
   end
+  def visit(g)
+    g.accept function_body
+  end
 end
 class FunctionCallNode < Node
   attr_accessor :value, :arguments
   def initialize(value, arguments)
     @value, @arguments = value, arguments
+  end
+  def visit(g)
+    g.accept value
+    arguments.each do |arg|
+      g.accept arg
+    end
   end
 end
 class NewExprNode < FunctionCallNode; end
@@ -75,11 +112,17 @@ class BreakNode < Node
   def initialize(value)
     @value = value
   end
+  def visit(g)
+    g.accept value if value
+  end
 end
 class ContinueNode < Node
   attr_accessor :value
   def initialize(value)
     @value = value
+  end
+  def visit(g)
+    g.accept value if value
   end
 end
 class ReturnNode < Node
@@ -87,17 +130,26 @@ class ReturnNode < Node
   def initialize(value)
     @value = value
   end
+  def visit(g)
+    g.accept value if value
+  end
 end
 class ThrowNode < Node
   attr_accessor :value
   def initialize(value)
     @value = value
   end
+  def visit(g)
+    g.accept value
+  end
 end
 class ExpressionStatementNode < Node
   attr_accessor :value
   def initialize(value)
     @value = value
+  end
+  def visit(g)
+    g.accept value
   end
 end
 
@@ -106,6 +158,9 @@ class UnaryNode < Node
   def initialize(value)
     @value = value
   end
+  def visit(g)
+    g.accept value
+  end
 end
 class PrefixNode < UnaryNode
   attr_accessor :operand
@@ -113,12 +168,18 @@ class PrefixNode < UnaryNode
     super(value)
     @operand = operand
   end
+  def visit(g)
+    g.accept operand
+  end
 end
 class PostfixNode < UnaryNode
   attr_accessor :operand
   def initialize(value, operand)
     super(value)
     @operand = operand
+  end
+  def visit(g)
+    g.accept operand
   end
 end
 class DeleteNode < UnaryNode; end
@@ -133,6 +194,10 @@ class BinaryNode < Node
   attr_accessor :left, :value
   def initialize(left, value)
     @left, @value = left, value
+  end
+  def visit(g)
+    g.accept left
+    g.accept value
   end
 end
 class MultiplyNode < BinaryNode; end
@@ -179,6 +244,11 @@ class ConditionalNode < Node
   def initialize(conditions, value, else_)
     @conditions, @value, @else = conditions, value, else_
   end
+  def visit(g)
+    g.accept conditions
+    g.accept value
+    g.accept self.else
+  end
 end
 
 class VarStatementNode < Node
@@ -186,17 +256,26 @@ class VarStatementNode < Node
   def initialize(value)
     @value = value
   end
+  def visit(g)
+    g.accept value
+  end
 end
 class VarDeclNode < Node
   attr_accessor :name, :value, :const
   def initialize(name, value, const=false)
     @name, @value, @const = name, value, const
   end
+  def visit(g)
+    g.accept value if value
+  end
 end
 class PropertyNode < Node
   attr_accessor :name, :value
   def initialize(name, value)
     @name, @value = name, value
+  end
+  def visit(g)
+    g.accept value
   end
 end
 
@@ -205,11 +284,53 @@ class ForNode < Node
   def initialize(init, test, counter, value)
     @init, @test, @counter, @value = init, test, counter, value
   end
+  def visit(g)
+    g.accept init if init
+    g.accept test if test
+    g.accept counter if counter
+    g.accept value
+  end
+end
+class DoWhileNode < Node
+  attr_accessor :left, :value
+  def initialize(left, value)
+    @left, @value = left, value
+  end
+  def visit(g)
+    g.accept left
+    g.accept value
+  end
+end
+class WhileNode < Node
+  attr_accessor :left, :value
+  def initialize(left, value)
+    @left, @value = left, value
+  end
+  def visit(g)
+    g.accept left
+    g.accept value
+  end
 end
 class IfNode < Node
   attr_accessor :conditions, :value, :else
   def initialize(conditions, value, else_)
     @conditions, @value, @else = conditions, value, else_
+  end
+  def visit(g)
+    g.accept conditions
+    g.accept value
+    g.accept self.else if self.else
+  end
+end
+class TryNode < Node
+  attr_accessor :value, :catch_var, :catch_block, :finally_block
+  def initialize(value, catch_var, catch_block, finally_block)
+    @value, @catch_var, @catch_block, @finally_block = value, catch_var, catch_block, finally_block
+  end
+  def visit(g)
+    g.accept value
+    g.accept catch_block if catch_block
+    g.accept finally_block if finally_block
   end
 end
 class SwitchNode < Node
@@ -217,17 +338,30 @@ class SwitchNode < Node
   def initialize(left, value)
     @left, @value = left, value
   end
+  def visit(g)
+    g.accept left
+    g.accept value
+  end
 end
 class CaseClauseNode < Node
   attr_accessor :left, :value
   def initialize(left, value)
     @left, @value = left, value
   end
+  def visit(g)
+    g.accept left
+    g.accept value
+  end
 end
 class BlockNode < Node
   attr_accessor :statements
   def initialize(statements)
     @statements = statements
+  end
+  def visit(g)
+    statements.each do |st|
+      g.accept st
+    end
   end
 end
 
@@ -265,6 +399,9 @@ class DotAccessorNode < Node
     g.push_literal self.accessor.to_sym
     arg_count = yield(2)
     g.send :js_invoke, arg_count + 1
+  end
+  def visit(g)
+    g.accept value
   end
 end
 class BracketAccessorNode < Node
@@ -318,6 +455,10 @@ class BracketAccessorNode < Node
     arg_count = yield(2)
     g.send :js_invoke, arg_count + 1
   end
+  def visit(g)
+    g.accept value
+    g.accept accessor
+  end
 end
 class ResolveNode < Node
   attr_accessor :value
@@ -363,6 +504,8 @@ class ResolveNode < Node
       yield 2
       g.send :[]=, 2
     end
+  end
+  def visit(g)
   end
 end
 end
