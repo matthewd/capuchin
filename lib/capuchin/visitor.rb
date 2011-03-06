@@ -349,7 +349,7 @@ class Capuchin::CompileVisitor < Capuchin::Visitor
   end
   def visit_StringNode(o)
     pos(o)
-    str = o.value[1, o.value.size - 2]
+    str = o.value.str[1, o.value.size - 2]
     str.gsub!(/\\(?:([bfnrtv'"\\])|([0-3][0-7]{0,2}|[4-7][0-7]?)|x([A-Fa-f0-9]{2})|u([A-Fa-f0-9]{4}))/) do
       if $1
         case $1

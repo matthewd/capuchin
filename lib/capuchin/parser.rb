@@ -12,19 +12,17 @@ class Capuchin::ASTBuilder < Parslet::Transform
   rule(:expr => subtree(:expr), :postfix_op => nil) { expr }
   rule(:expr => subtree(:expr), :calls => []) { expr }
 
-  rule(:integer => simple(:x)) { Integer(x) }
-  rule(:float => simple(:x)) { Float(x) }
-
   rule(:literal => 'null') { Capuchin::Nodes::NullNode.new }
   rule(:literal => 'true') { Capuchin::Nodes::TrueNode.new }
   rule(:literal => 'false') { Capuchin::Nodes::FalseNode.new }
-  rule(:literal => { :string => simple(:x) }) { Capuchin::Nodes::StringNode.new(x) }
-  rule(:literal => { :regexp => simple(:x) }) { Capuchin::Nodes::RegexpNode.new(x) }
-  rule(:literal => simple(:num)) { Capuchin::Nodes::NumberNode.new(num) }
+  rule(:literal => { :string => simple(:x) }) { Capuchin::Nodes::StringNode.new(x).loc!(x) }
+  rule(:literal => { :regexp => simple(:x) }) { Capuchin::Nodes::RegexpNode.new(x).loc!(x) }
+  rule(:literal => { :integer => simple(:x) }) { Capuchin::Nodes::NumberNode.new(Integer(x)).loc!(x) }
+  rule(:literal => { :float => simple(:x) }) { Capuchin::Nodes::NumberNode.new(Float(x)).loc!(x) }
 
-  rule(:this => 'this') { Capuchin::Nodes::ThisNode.new }
+  rule(:this => simple(:x)) { Capuchin::Nodes::ThisNode.new.loc!(x) }
   rule(:ident => simple(:x)) { x }
-  rule(:resolve => simple(:x)) { Capuchin::Nodes::ResolveNode.new(x) }
+  rule(:resolve => simple(:x)) { Capuchin::Nodes::ResolveNode.new(x).loc!(x) }
 
   rule(:name => simple(:name), :value => simple(:value)) { Capuchin::Nodes::PropertyNode.new(name, value) }
   rule(:object_literal => sequence(:properties)) { Capuchin::Nodes::ObjectLiteralNode.new(properties) }
@@ -45,23 +43,25 @@ class Capuchin::ASTBuilder < Parslet::Transform
       tmp
     end
   }
-  rule(:array => { :elements => sequence(:elements) }) { Capuchin::Nodes::ArrayNode.new(elements) }
+  rule(:array => { :elements => sequence(:elements), :loc => simple(:l) }) { Capuchin::Nodes::ArrayNode.new(elements).loc!(l) }
 
-  rule(:expr => simple(:value), :postfix_op => { :postfix => simple(:op) }) { Capuchin::Nodes::PostfixNode.new(op, value) }
+  rule(:expr => simple(:value), :postfix_op => { :postfix => simple(:op) }) { Capuchin::Nodes::PostfixNode.new(op, value).loc!(op) }
 
-  rule(:unary => 'delete', :expr => simple(:value)) { Capuchin::Nodes::DeleteNode.new(value) }
-  rule(:unary => 'void', :expr => simple(:value)) { Capuchin::Nodes::VoidNode.new(value) }
-  rule(:unary => 'typeof', :expr => simple(:value)) { Capuchin::Nodes::TypeOfNode.new(value) }
-  rule(:unary => '++', :expr => simple(:value)) { Capuchin::Nodes::PrefixNode.new('++', value) }
-  rule(:unary => '--', :expr => simple(:value)) { Capuchin::Nodes::PrefixNode.new('--', value) }
-
-  rule(:unary => '+', :expr => simple(:value)) { Capuchin::Nodes::UnaryPlusNode.new(value) }
-  rule(:unary => '-', :expr => simple(:value)) { Capuchin::Nodes::UnaryMinusNode.new(value) }
-  rule(:unary => '~', :expr => simple(:value)) { Capuchin::Nodes::BitwiseNotNode.new(value) }
-  rule(:unary => '!', :expr => simple(:value)) { Capuchin::Nodes::LogicalNotNode.new(value) }
+  rule(:unary => simple(:op), :expr => simple(:value)) do
+    case op
+    when 'delete'; Capuchin::Nodes::DeleteNode.new(value)
+    when 'void'; Capuchin::Nodes::VoidNode.new(value)
+    when 'typeof'; Capuchin::Nodes::TypeOfNode.new(value)
+    when '++', '--'; Capuchin::Nodes::PrefixNode.new(op, value)
+    when '+'; Capuchin::Nodes::UnaryPlusNode.new(value)
+    when '-'; Capuchin::Nodes::UnaryMinusNode.new(value)
+    when '~'; Capuchin::Nodes::BitwiseNotNode.new(value)
+    when '!'; Capuchin::Nodes::LogicalNotNode.new(value)
+    end.loc!(op)
+  end
 
   rule(:left => simple(:left), :ops => sequence(:ops)) do
-    ops.inject(left) {|x,op| op.left = x; op }
+    ops.inject(left) {|x,op| op.left = x; op }.loc!(left)
   end
   rule(:right => simple(:right), :ops => sequence(:ops)) do
     ops.reverse.inject(right) {|x,op| op.value = x; op }
@@ -90,67 +90,67 @@ class Capuchin::ASTBuilder < Parslet::Transform
   rule(:binary => '&&', :right => simple(:right)) { Capuchin::Nodes::LogicalAndNode.new(nil, right) }
   rule(:binary => '||', :right => simple(:right)) { Capuchin::Nodes::LogicalOrNode.new(nil, right) }
 
-  rule(:assignment => '=', :left => simple(:left)) { Capuchin::Nodes::OpEqualNode.new(left, nil) }
-  rule(:assignment => '+=', :left => simple(:left)) { Capuchin::Nodes::OpPlusEqualNode.new(left, nil) }
-  rule(:assignment => '-=', :left => simple(:left)) { Capuchin::Nodes::OpMinusEqualNode.new(left, nil) }
-  rule(:assignment => '*=', :left => simple(:left)) { Capuchin::Nodes::OpMultiplyEqualNode.new(left, nil) }
-  rule(:assignment => '/=', :left => simple(:left)) { Capuchin::Nodes::OpDivideEqualNode.new(left, nil) }
-  rule(:assignment => '<<=', :left => simple(:left)) { Capuchin::Nodes::OpLShiftEqualNode.new(left, nil) }
-  rule(:assignment => '>>=', :left => simple(:left)) { Capuchin::Nodes::OpRShiftEqualNode.new(left, nil) }
-  rule(:assignment => '>>>=', :left => simple(:left)) { Capuchin::Nodes::OpURShiftEqualNode.new(left, nil) }
-  rule(:assignment => '&=', :left => simple(:left)) { Capuchin::Nodes::OpAndEqualNode.new(left, nil) }
-  rule(:assignment => '^=', :left => simple(:left)) { Capuchin::Nodes::OpXOrEqualNode.new(left, nil) }
-  rule(:assignment => '|=', :left => simple(:left)) { Capuchin::Nodes::OpOrEqualNode.new(left, nil) }
-  rule(:assignment => '%=', :left => simple(:left)) { Capuchin::Nodes::OpModEqualNode.new(left, nil) }
+  rule(:assignment => '=', :left => simple(:left)) { Capuchin::Nodes::OpEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '+=', :left => simple(:left)) { Capuchin::Nodes::OpPlusEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '-=', :left => simple(:left)) { Capuchin::Nodes::OpMinusEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '*=', :left => simple(:left)) { Capuchin::Nodes::OpMultiplyEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '/=', :left => simple(:left)) { Capuchin::Nodes::OpDivideEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '<<=', :left => simple(:left)) { Capuchin::Nodes::OpLShiftEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '>>=', :left => simple(:left)) { Capuchin::Nodes::OpRShiftEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '>>>=', :left => simple(:left)) { Capuchin::Nodes::OpURShiftEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '&=', :left => simple(:left)) { Capuchin::Nodes::OpAndEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '^=', :left => simple(:left)) { Capuchin::Nodes::OpXOrEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '|=', :left => simple(:left)) { Capuchin::Nodes::OpOrEqualNode.new(left, nil).loc!(left) }
+  rule(:assignment => '%=', :left => simple(:left)) { Capuchin::Nodes::OpModEqualNode.new(left, nil).loc!(left) }
 
   rule(:binary => ',', :right => simple(:right)) { Capuchin::Nodes::CommaNode.new(nil, right) }
 
-  rule(:var => simple(:var), :init => simple(:init)) { Capuchin::Nodes::VarDeclNode.new(var, init) }
-  rule(:vars => sequence(:vars)) { Capuchin::Nodes::VarStatementNode.new(vars) }
+  rule(:var => simple(:var), :init => simple(:init)) { Capuchin::Nodes::VarDeclNode.new(var, init).loc!(var) }
+  rule(:st => simple(:st), :vars => sequence(:vars)) { Capuchin::Nodes::VarStatementNode.new(vars).loc!(st) }
 
-  rule(:expr_statement => simple(:expr)) { Capuchin::Nodes::ExpressionStatementNode.new(expr) }
+  rule(:expr_statement => simple(:expr)) { Capuchin::Nodes::ExpressionStatementNode.new(expr).loc!(expr) }
   rule(:statement => simple(:statement)) { statement }
 
-  rule(:function_expr => { :name => simple(:name), :args => sequence(:args), :body => sequence(:body) }) { Capuchin::Nodes::FunctionExprNode.new(name || 'function', body, args) }
-  rule(:function_expr => { :name => simple(:name), :args => nil, :body => sequence(:body) }) { Capuchin::Nodes::FunctionExprNode.new(name || 'function', body, []) }
+  rule(:function_expr => { :st => simple(:st), :name => simple(:name), :args => sequence(:args), :body => sequence(:body) }) { Capuchin::Nodes::FunctionExprNode.new(name || 'function', body, args).loc!(st) }
+  rule(:function_expr => { :st => simple(:st), :name => simple(:name), :args => nil, :body => sequence(:body) }) { Capuchin::Nodes::FunctionExprNode.new(name || 'function', body, []).loc!(st) }
 
-  rule(:function_declaration => { :name => simple(:name), :args => sequence(:args), :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, args) }
-  rule(:function_declaration => { :name => simple(:name), :args => nil, :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, []) }
+  rule(:function_declaration => { :st => simple(:st), :name => simple(:name), :args => sequence(:args), :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, args).loc!(st) }
+  rule(:function_declaration => { :st => simple(:st), :name => simple(:name), :args => nil, :body => sequence(:body) }) { Capuchin::Nodes::FunctionDeclNode.new(name || 'function', body, []).loc!(st) }
 
-  rule(:new => 'new', :expr => simple(:expr), :args => sequence(:args)) { Capuchin::Nodes::NewExprNode.new(expr, args) }
-  rule(:new => 'new', :expr => simple(:expr), :args => nil) { Capuchin::Nodes::NewExprNode.new(expr, []) }
+  rule(:new => simple(:st), :expr => simple(:expr), :args => sequence(:args)) { Capuchin::Nodes::NewExprNode.new(expr, args).loc!(st) }
+  rule(:new => simple(:st), :expr => simple(:expr), :args => nil) { Capuchin::Nodes::NewExprNode.new(expr, []).loc!(st) }
 
-  rule(:expr => simple(:expr), :args => sequence(:args)) { Capuchin::Nodes::FunctionCallNode.new(expr, args) }
-  rule(:expr => simple(:expr), :args => nil) { Capuchin::Nodes::FunctionCallNode.new(expr, []) }
+  rule(:expr => simple(:expr), :args => sequence(:args)) { Capuchin::Nodes::FunctionCallNode.new(expr, args).loc!(expr) }
+  rule(:expr => simple(:expr), :args => nil) { Capuchin::Nodes::FunctionCallNode.new(expr, []).loc!(expr) }
 
   rule(:expr => simple(:left), :calls => sequence(:calls)) do
-    calls.inject(left) {|x,call| call.value = x; call }
+    calls.inject(left) {|x,call| call.value = x; call }.loc!(left)
   end
   rule(:call => { :expr => simple(:expr) }) { Capuchin::Nodes::BracketAccessorNode.new(nil, expr) }
   rule(:call => { :name => simple(:name) }) { Capuchin::Nodes::DotAccessorNode.new(nil, name) }
   rule(:call => { :args => sequence(:args) }) { Capuchin::Nodes::FunctionCallNode.new(nil, args) }
   rule(:call => { :args => nil }) { Capuchin::Nodes::FunctionCallNode.new(nil, []) }
 
-  rule(:break => simple(:value)) { Capuchin::Nodes::BreakNode.new(value) }
-  rule(:continue => simple(:value)) { Capuchin::Nodes::ContinueNode.new(value) }
-  rule(:return => simple(:value)) { Capuchin::Nodes::ReturnNode.new(value) }
-  rule(:throw => simple(:value)) { Capuchin::Nodes::ThrowNode.new(value) }
+  rule(:st => simple(:st), :break => simple(:value)) { Capuchin::Nodes::BreakNode.new(value).loc!(st) }
+  rule(:st => simple(:st), :continue => simple(:value)) { Capuchin::Nodes::ContinueNode.new(value).loc!(st) }
+  rule(:st => simple(:st), :return => simple(:value)) { Capuchin::Nodes::ReturnNode.new(value).loc!(st) }
+  rule(:st => simple(:st), :throw => simple(:value)) { Capuchin::Nodes::ThrowNode.new(value).loc!(st) }
 
-  rule(:label => simple(:label), :labelled => simple(:statement)) { Capuchin::Nodes::LabelNode.new(label, statement) }
+  rule(:label => simple(:label), :labelled => simple(:statement)) { Capuchin::Nodes::LabelNode.new(label, statement).loc!(statement) }
 
-  rule(:block => sequence(:statements)) { Capuchin::Nodes::BlockNode.new(statements) }
-  rule(:if_condition => simple(:cond), :true_part => simple(:t), :false_part => simple(:f)) { Capuchin::Nodes::IfNode.new(cond, t, f) }
-  rule(:cond => simple(:cond), :true_expr => simple(:t), :false_expr => simple(:f)) { Capuchin::Nodes::ConditionalNode.new(cond, t, f) }
-  rule(:while => simple(:cond), :code => simple(:code)) { Capuchin::Nodes::WhileNode.new(cond, code) }
-  rule(:do_while => simple(:cond), :code => simple(:code)) { Capuchin::Nodes::DoWhileNode.new(code, cond) }
-  rule(:try => simple(:try_code), :finally => simple(:finally_code)) { Capuchin::Nodes::TryNode.new(try_code, nil, nil, finally_code) }
-  rule(:try => simple(:try_code), :catch_var => simple(:catch_var), :catch => simple(:catch_code), :finally => simple(:finally_code)) { Capuchin::Nodes::TryNode.new(try_code, catch_var, catch_code, finally_code) }
+  rule(:st => simple(:st), :block => sequence(:statements)) { Capuchin::Nodes::BlockNode.new(statements).loc!(st) }
+  rule(:st => simple(:st), :if_condition => simple(:cond), :true_part => simple(:t), :false_part => simple(:f)) { Capuchin::Nodes::IfNode.new(cond, t, f).loc!(st) }
+  rule(:cond => simple(:cond), :true_expr => simple(:t), :false_expr => simple(:f)) { Capuchin::Nodes::ConditionalNode.new(cond, t, f).loc!(cond) }
+  rule(:st => simple(:st), :while => simple(:cond), :code => simple(:code)) { Capuchin::Nodes::WhileNode.new(cond, code).loc!(st) }
+  rule(:st => simple(:st), :do_while => simple(:cond), :code => simple(:code)) { Capuchin::Nodes::DoWhileNode.new(code, cond).loc!(st) }
+  rule(:st => simple(:st), :try => simple(:try_code), :finally => simple(:finally_code)) { Capuchin::Nodes::TryNode.new(try_code, nil, nil, finally_code).loc!(st) }
+  rule(:st => simple(:st), :try => simple(:try_code), :catch_var => simple(:catch_var), :catch => simple(:catch_code), :finally => simple(:finally_code)) { Capuchin::Nodes::TryNode.new(try_code, catch_var, catch_code, finally_code).loc!(st) }
 
-  rule(:case => simple(:value), :code => sequence(:code)) { Capuchin::Nodes::CaseClauseNode.new(value, code) }
-  rule(:default => 'default', :code => sequence(:code)) { Capuchin::Nodes::CaseClauseNode.new(nil, code) }
-  rule(:switch_statement => { :switch => simple(:value), :cases => sequence(:options) }) { Capuchin::Nodes::SwitchNode.new(value, options) }
+  rule(:st => simple(:st), :case => simple(:value), :code => sequence(:code)) { Capuchin::Nodes::CaseClauseNode.new(value, code).loc!(st) }
+  rule(:default => simple(:st), :code => sequence(:code)) { Capuchin::Nodes::CaseClauseNode.new(nil, code).loc!(st) }
+  rule(:switch_statement => { :st => simple(:st), :switch => simple(:value), :cases => sequence(:options) }) { Capuchin::Nodes::SwitchNode.new(value, options).loc!(st) }
 
-  rule(:init => simple(:init), :test => simple(:cond), :counter => simple(:counter), :code => simple(:code)) { Capuchin::Nodes::ForNode.new(init, cond, counter, code) }
+  rule(:st => simple(:st), :init => simple(:init), :test => simple(:cond), :counter => simple(:counter), :code => simple(:code)) { Capuchin::Nodes::ForNode.new(init, cond, counter, code).loc!(st) }
 end
 
 class Capuchin::Parser < Parslet::Parser
@@ -208,7 +208,7 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:array_literal) do
-    `[` >> sp? >> element_list.maybe.as(:elements) >> sp? >> `]`
+    `[`.as(:loc) >> sp? >> element_list.maybe.as(:elements) >> sp? >> `]`
   end
 
   rule(:element_list) do
@@ -446,11 +446,11 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:block) do
-    `{` >> sp? >> source_elements.as(:block) >> sp? >> `}`
+    `{`.as(:st) >> sp? >> source_elements.as(:block) >> sp? >> `}`
   end
 
   rule(:variable_statement) do
-    `var` >> sp >> variable_declaration_list.as(:vars) >> (sp? >> `;` | error)
+    `var`.as(:st) >> sp >> variable_declaration_list.as(:vars) >> (sp? >> `;` | error)
   end
 
   rule(:variable_declaration_list) do
@@ -486,27 +486,27 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:if_statement) do
-    `if` >> sp? >> `(` >> sp? >> expr.as(:if_condition) >> sp? >> `)` >> sp? >> statement.as(:true_part) >> (sp? >> `else` >> sp? >> statement).maybe.as(:false_part)
+    `if`.as(:st) >> sp? >> `(` >> sp? >> expr.as(:if_condition) >> sp? >> `)` >> sp? >> statement.as(:true_part) >> (sp? >> `else` >> sp? >> statement).maybe.as(:false_part)
   end
 
   rule(:iteration_statement) do
-    `do` >> sp? >> statement.as(:code) >> sp? >> `while` >> sp? >> `(` >> sp? >> expr.as(:do_while) >> sp? >> `)` >> (sp? >> `;` | error) |
-    `while` >> sp? >> `(` >> sp? >> expr.as(:while) >> sp? >> `)` >> sp? >> statement.as(:code) |
-    `for` >> sp? >> `(` >> sp? >> (expr_no_in >> sp?).maybe.as(:init) >> `;` >> sp? >> (expr >> sp?).maybe.as(:test) >> `;` >> sp? >> (expr >> sp?).maybe.as(:counter) >> `)` >> sp? >> statement.as(:code) |
-    `for` >> sp? >> `(` >> sp? >> (`var` >> sp >> variable_declaration_list_no_in.as(:vars)).as(:init) >> sp? >> `;` >> sp? >> (expr >> sp?).maybe.as(:test) >> `;` >> sp? >> (expr >> sp?).maybe.as(:counter) >> `)` >> sp? >> statement.as(:code) |
-    `for` >> sp? >> `(` >> sp? >> (left_hand_side_expr.as(:left) >> sp >> `in` >> sp >> (expr >> sp?).maybe.as(:right)).as(:for_in) >> `)` >> sp? >> statement.as(:code) |
-    `for` >> sp? >> `(` >> sp? >> ((`var` >> sp >> ident.as(:var)).as(:vars) >> sp >> `in` >> sp >> (expr >> sp?).maybe.as(:right)).as(:for_in) >> `)` >> sp? >> statement.as(:code) |
-    `for` >> sp? >> `(` >> sp? >> ((`var` >> sp >> ident.as(:var) >> sp? >> `=` >> sp? >> assignment_expr_no_in.as(:expr)).as(:vars) >> sp >> `in` >> sp >> (expr >> sp?).maybe.as(:right)).as(:for_in) >> `)` >> sp? >> statement.as(:code)
+    `do`.as(:st) >> sp? >> statement.as(:code) >> sp? >> `while` >> sp? >> `(` >> sp? >> expr.as(:do_while) >> sp? >> `)` >> (sp? >> `;` | error) |
+    `while`.as(:st) >> sp? >> `(` >> sp? >> expr.as(:while) >> sp? >> `)` >> sp? >> statement.as(:code) |
+    `for`.as(:st) >> sp? >> `(` >> sp? >> (expr_no_in >> sp?).maybe.as(:init) >> `;` >> sp? >> (expr >> sp?).maybe.as(:test) >> `;` >> sp? >> (expr >> sp?).maybe.as(:counter) >> `)` >> sp? >> statement.as(:code) |
+    `for`.as(:st) >> sp? >> `(` >> sp? >> (`var`.as(:st) >> sp >> variable_declaration_list_no_in.as(:vars)).as(:init) >> sp? >> `;` >> sp? >> (expr >> sp?).maybe.as(:test) >> `;` >> sp? >> (expr >> sp?).maybe.as(:counter) >> `)` >> sp? >> statement.as(:code) |
+    `for`.as(:st) >> sp? >> `(` >> sp? >> (left_hand_side_expr.as(:left) >> sp >> `in` >> sp >> (expr >> sp?).maybe.as(:right)).as(:for_in) >> `)` >> sp? >> statement.as(:code) |
+    `for`.as(:st) >> sp? >> `(` >> sp? >> ((`var`.as(:st) >> sp >> ident.as(:var)).as(:vars) >> sp >> `in` >> sp >> (expr >> sp?).maybe.as(:right)).as(:for_in) >> `)` >> sp? >> statement.as(:code) |
+    `for`.as(:st) >> sp? >> `(` >> sp? >> ((`var`.as(:st) >> sp >> ident.as(:var) >> sp? >> `=` >> sp? >> assignment_expr_no_in.as(:expr)).as(:vars) >> sp >> `in` >> sp >> (expr >> sp?).maybe.as(:right)).as(:for_in) >> `)` >> sp? >> statement.as(:code)
   end
 
   rule(:continue_statement) do
-    `continue` >> (sp >> ident).maybe.as(:continue) >> (sp? >> `;` | error)
+    `continue`.as(:st) >> (sp >> ident).maybe.as(:continue) >> (sp? >> `;` | error)
   end
   rule(:break_statement) do
-    `break` >> (sp >> ident).maybe.as(:break) >> (sp? >> `;` | error)
+    `break`.as(:st) >> (sp >> ident).maybe.as(:break) >> (sp? >> `;` | error)
   end
   rule(:return_statement) do
-    `return` >> (sp? >> expr).maybe.as(:return) >> (sp? >> `;` | error)
+    `return`.as(:st) >> (sp? >> expr).maybe.as(:return) >> (sp? >> `;` | error)
   end
 
   rule(:with_statement) do
@@ -514,14 +514,14 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:switch_statement) do
-    (`switch` >> sp? >> `(` >> sp? >> expr.as(:switch) >> sp? >> `)` >> sp? >> case_block.as(:cases)).as(:switch_statement)
+    (`switch`.as(:st) >> sp? >> `(` >> sp? >> expr.as(:switch) >> sp? >> `)` >> sp? >> case_block.as(:cases)).as(:switch_statement)
   end
 
   rule(:case_block) do
     `{` >> sp? >> case_clause.repeat >> (default_clause >> case_clause.repeat).maybe >> `}`
   end
   rule(:case_clause) do
-    `case` >> sp? >> expr.as(:case) >> sp? >> `:` >> sp? >> source_elements.as(:code) >> sp?
+    `case`.as(:st) >> sp? >> expr.as(:case) >> sp? >> `:` >> sp? >> source_elements.as(:code) >> sp?
   end
   rule(:default_clause) do
     `default`.as(:default) >> sp? >> `:` >> sp? >> source_elements.as(:code) >> sp?
@@ -532,21 +532,21 @@ class Capuchin::Parser < Parslet::Parser
   end
 
   rule(:throw_statement) do
-    `throw` >> sp? >> expr.as(:throw) >> (sp? >> `;` | error)
+    `throw`.as(:st) >> sp? >> expr.as(:throw) >> (sp? >> `;` | error)
   end
 
   rule(:try_statement) do
-    `try` >> sp? >> block.as(:try) >> sp? >> (
+    `try`.as(:st) >> sp? >> block.as(:try) >> sp? >> (
       `finally` >> sp? >> block.as(:finally) |
       `catch` >> sp? >> `(` >> sp? >> ident.as(:catch_var) >> sp? >> `)` >> sp? >> block.as(:catch) >> (sp? >> `finally` >> sp? >> block).maybe.as(:finally)
     )
   end
 
   rule(:function_declaration) do
-    `function` >> sp >> ident.as(:name) >> sp? >> `(` >> sp? >> (formal_parameter_list >> sp?).maybe.as(:args) >> `)` >> sp? >> `{` >> sp? >> function_body.as(:body) >> sp? >> `}`
+    `function`.as(:st) >> sp >> ident.as(:name) >> sp? >> `(` >> sp? >> (formal_parameter_list >> sp?).maybe.as(:args) >> `)` >> sp? >> `{` >> sp? >> function_body.as(:body) >> sp? >> `}`
   end
   rule(:function_expr) do
-    `function` >> (sp >> ident).maybe.as(:name) >> sp? >> `(` >> sp? >> (formal_parameter_list >> sp?).maybe.as(:args) >> `)` >> sp? >> `{` >> sp? >> function_body.as(:body) >> sp? >> `}`
+    `function`.as(:st) >> (sp >> ident).maybe.as(:name) >> sp? >> `(` >> sp? >> (formal_parameter_list >> sp?).maybe.as(:args) >> `)` >> sp? >> `{` >> sp? >> function_body.as(:body) >> sp? >> `}`
   end
 
   rule(:formal_parameter_list) do

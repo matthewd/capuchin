@@ -24,8 +24,19 @@ class Node
     g.send :js_call, arg_count + 1
   end
 
-  def filename; end
-  def line; 1; end
+  def filename; @filename; end
+  def line; @line || 1; end
+  def loc!(loc)
+    case loc
+    when Parslet::Slice
+      @filename = loc.source.path rescue nil
+      @line = loc.line_and_column[0]
+    when Capuchin::Nodes::Node
+      @filename = loc.filename
+      @line = loc.line
+    end
+    self
+  end
 end
 class RootNode < Node
   attr_accessor :value
