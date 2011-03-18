@@ -12,6 +12,7 @@ class Hash
 end
 
 module Kernel
+  def _js_key?(k); false; end
   def js_value; js_invoke(:valueOf); end
   def js_div(n); self / n; end
   def js_add(other)
@@ -27,32 +28,15 @@ module Kernel
   def js_equal(v); self == v; end
   def js_strictly_equal(v); eql?(v); end
   def js_in(k)
-    if respond_to?(:_js_get)
-      if respond_to?(:_js_key?)
-        if _js_key?(name)
-          return true
-        end
-      elsif _js_get(name)
-        return true
-      end
+    if _js_key?(name)
+      return true
     end
 
     respond_to?(:"js:#{k}")
   end
   def js_get(name)
-    getter = :"js:get:#{name}"
-    if respond_to?(getter)
-      return send(getter)
-    end
-
-    if respond_to?(:_js_get)
-      if respond_to?(:_js_key?)
-        if _js_key?(name)
-          return _js_get(name)
-        end
-      elsif v = _js_get(name)
-        return v
-      end
+    if _js_key?(name)
+      return _js_get(name)
     end
 
     accessor = :"js:#{name}"
@@ -61,11 +45,6 @@ module Kernel
     end
   end
   def js_set(name, value)
-    setter = :"js:set:#{name}"
-    if respond_to?(setter)
-      return send(setter, value)
-    end
-
     if UnboundMethod === value || Capuchin::Function === value
       metaclass.send(:_js_define_method, :"js:#{name}") do |*args|
         instance_exec(*args, &value)
@@ -95,41 +74,21 @@ module Kernel
     end
   end
 end
-def test_js_respond_to(name, *args)
-  respond_to?(:"js:#{name}")
-end
-def invoke_js_respond_to(name, *args)
-  send(:"js:#{name}", *args)
-end
-def invoke_js_get(name, *args)
-  js_get(name).js_call(self, *args)
-end
-def Rubinius.bind_call(recv, meth, *args)
-  # meth == :js_invoke
-  case meth
-  when :js_invoke
-    Rubinius::CallUnit.test(
-      Rubinius::CallUnit.for_method(method(:test_js_respond_to)),
-      Rubinius::CallUnit.for_method(method(:invoke_js_respond_to)),
-      Rubinius::CallUnit.for_method(method(:invoke_js_get))
-    )
-  else
-    raise ArgumentError, "bind_call for unknown '#{meth}'"
-  end
-end
 class Capuchin::Proto
   include JSOpen
 end
 class Capuchin::Function
   include JSOpen
-  def initialize(name=nil, object={}, mod=nil, &block)
+  def initialize(name=nil, object=nil, mod=nil, &block)
     @name = name
     @block = block || lambda {}
     @proto = Capuchin::Proto.new
     @module = mod
     _js_set(:prototype, @proto)
-    object.each do |k,v|
-      _js_set(k, v)
+    if object
+      object.each do |k,v|
+        _js_set(k, v)
+      end
     end
   end
 end
@@ -147,24 +106,8 @@ class Class
       alias_method :"js:#{name}", name
     end
   end
-  def js_expose_attr(*names)
-    names.each do |name|
-      alias_method :"js:get:#{name}", name
-      if method_defined?(:"#{name}=")
-        alias_method :"js:set:#{name}", :"#{name}="
-      end
-    end
-  end
   def js_def(name, &block)
     _js_define_method(:"js:#{name}", &block)
-  end
-  def js_attr(name, &block)
-    name = name.to_s.dup
-    if name.sub!(/=$/, '')
-      _js_define_method(:"js:set:#{name}", &block)
-    else
-      _js_define_method(:"js:get:#{name}", &block)
-    end
   end
   def _js_define_method(name, &block)
     (@js_methods ||= Rubinius::LookupTable.new)[name] = Capuchin::Function.new(&block)
@@ -173,22 +116,35 @@ class Class
 end
 
 class Array
-  js_attr :length do
-    size
-  end
-  js_attr :length= do |n|
-    if n > size
-      slice!(n, size)
-    elsif n < size
-      fill(0, size, n)
-    end
-  end
   js_expose_method :push
 
   def js_hash; @js_hash ||= Rubinius::LookupTable.new; end
-  def _js_key?(k); Fixnum === k ? k <= size : js_hash.key?(k); end
-  def _js_get(k); Fixnum === k ? self[k] : js_hash[k]; end
-  def _js_set(k,v); Fixnum === k ? self[k] = v : js_hash[k] = v; end
+  def _js_key?(k)
+    case k
+    when Fixnum; k <= size
+    when :length; true
+    else; js_hash.key?(k)
+    end
+  end
+  def _js_get(k)
+    case k
+    when Fixnum; self[k]
+    when :length; size
+    else; js_hash[k]
+    end
+  end
+  def _js_set(k,v)
+    case k
+    when Fixnum; self[k] = v
+    when :length
+      if v > size
+        slice!(v, size)
+      elsif v < size
+        fill(0, size, v)
+      end
+    else; js_hash[k] = v
+    end
+  end
 
   def self.js_new(*args)
     if args.size == 1 && Fixnum === args.first
@@ -227,9 +183,6 @@ class Symbol
 end
 class String
   def js_cmp; to_f; end
-  js_attr :length do
-    size
-  end
   js_expose_method :substring
   js_def :indexOf do |needle|
     index(needle) || -1
@@ -245,6 +198,20 @@ class String
       sub(needle, replacement)
     end
   end
+
+  def js_get(k)
+    case k
+    when :length; size
+    else; super
+    end
+  end
+  def js_key?(k)
+    case k
+    when :length; true
+    else; super
+    end
+  end
+
   def js_key; intern; end
   def js_truthy?; size > 0; end
   def js_typeof; 'string'; end
@@ -326,6 +293,17 @@ class UnboundMethod
   end
 end
 
+class Capuchin::Builtin
+  include JSOpen
+  def initialize(hash=nil)
+    @js_hash = Rubinius::LookupTable.new
+    if hash
+      hash.each do |k,v|
+        _js_set(k, v)
+      end
+    end
+  end
+end
 class Capuchin::Obj
   include JSOpen
   def initialize(constructor, proto)
@@ -406,11 +384,26 @@ class Capuchin::RegExp
 
     Regexp.new(pattern, flags)
   end
-  js_attr :source do @pattern end
-  js_attr :ignoreCase do @i end
-  js_attr :global do @g end
-  js_attr :multiline do @m end
-  js_attr :lastIndex do @last end
+  def js_get(k)
+    case k
+    when :source; @pattern
+    when :ignoreCase; @i
+    when :global; @g
+    when :multiline; @m
+    when :lastIndex; @last
+    else; super
+    end
+  end
+  def js_key?(k)
+    case k
+    when :source; true
+    when :ignoreCase; true
+    when :global; true
+    when :multiline; true
+    when :lastIndex; true
+    else; super
+    end
+  end
   js_def :test do |str|
     @regexp.match(str) ? true : false
   end
@@ -450,11 +443,11 @@ Capuchin::Globals[:String] = String
 Capuchin::Globals[:Object] = Capuchin::Obj
 Capuchin::Globals[:Function] = Capuchin::Function
 Capuchin::Globals[:RegExp] = Capuchin::RegExp
-Capuchin::Globals[:Date] = Capuchin::Function.new('Date', {}, Capuchin::DateMethods) {|| @t = Time.new }
+Capuchin::Globals[:Date] = Capuchin::Function.new('Date', nil, Capuchin::DateMethods) {|| @t = Time.new }
 Capuchin::Globals[:print] = Capuchin::Function.new {|x| puts x }
 Capuchin::Globals[:p] = Capuchin::Function.new {|x| p [x, x.methods.grep(/^js:/)] }
 Capuchin::Globals[:gc] = Capuchin::Function.new {|x| GC.start }
-Capuchin::Globals[:Math] = {
+Capuchin::Globals[:Math] = Capuchin::Builtin.new({
   :log => Capuchin::Function.new {|n| Math.log(n.js_value) },
   :pow => Capuchin::Function.new {|a,b| a.js_value ** b.js_value },
   :sqrt => Capuchin::Function.new {|n| Math.sqrt(n.js_value) },
@@ -462,7 +455,7 @@ Capuchin::Globals[:Math] = {
   :cos => Capuchin::Function.new {|n| Math.cos(n.js_value) },
   :E => Math::E,
   :PI => Math::PI,
-}
+})
 Capuchin::Globals[:run] = Capuchin::Globals[:load] = Capuchin::Function.new do |filename|
   cx = Capuchin::Context.new
   start = Time.now
